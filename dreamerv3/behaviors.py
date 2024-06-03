@@ -10,13 +10,13 @@ tfd = tfp.distributions
 
 class Greedy(eqx.Module):
     ac: eqx.Module
-    def __init__(self, wm, act_space, config):
+    def __init__(self, key, wm, act_space, config):
         rewfn = lambda s: wm.heads["reward"](get_feat(s)).mean()[:, 1:]
         if config.critic_type == "vfunction":
             critics = {"extr": VFunction(rewfn, config, name="critic")}
         else:
             raise NotImplementedError(config.critic_type)
-        self.ac = ImagActorCritic(critics, {"extr": 1.0}, act_space, config, name="ac")
+        self.ac = ImagActorCritic(key, critics, {"extr": 1.0}, act_space, config, name="ac")
 
     def initial(self, batch_size):
         return self.ac.initial(batch_size)
@@ -24,8 +24,8 @@ class Greedy(eqx.Module):
     def policy(self, latent, state):
         return self.ac.policy(latent, state)
 
-    def train(self, imagine, start, data):
-        return self.ac.train(imagine, start, data)
+    def loss(self, key, imagine, start, acts):
+        return self.ac.loss(key, imagine, start, acts)
 
     def report(self, data):
         return {}
@@ -34,7 +34,7 @@ class Greedy(eqx.Module):
 class Random(eqx.Module):
     act_space: any
     config: FrozenConfigDict
-    def __init__(self, wm, act_space, config):
+    def __init__(self, key, wm, act_space, config):
         self.config = config
         self.act_space = act_space
 

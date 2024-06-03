@@ -225,7 +225,9 @@ class ImagActorCritic(eqx.Module):
     def initial(self, batch_size):
         return {}
 
-    def loss(self, key, imagine, start, acts, update=True):
+    def loss(self, key, imagine, start, update=True):
+        metrics = {}
+        losses = {}
         policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
         traj = imagine(key, policy, start, self.config.imag_horizon)
         traj = {k: sg(v) for k, v in traj.items()}
@@ -239,7 +241,7 @@ class ImagActorCritic(eqx.Module):
 
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
-        critic_loss = (
+        losses["critic_loss"] = (
             traj["weight"][:, :-1]
             * -(
                 critic.log_prob(sg(ret_padded))
@@ -249,12 +251,12 @@ class ImagActorCritic(eqx.Module):
 
         actor = self.actor(get_feat(traj))
 
-        logpi = sum([v.log_prob(sg(acts[k]))[:, :-1] for k, v in actor.items()])
+        logpi = sum([v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()])
         ents = {k: v.entropy()[:, :-1] for k, v in actor.items()}
-        actor_loss = traj["weight"][:, :-1] * -(
+        losses["actor_loss"] = traj["weight"][:, :-1] * -(
             logpi * sg(adv_normed) + self.config.actent * sum(ents.values())
         )
-        return (actor_loss, critic_loss)
+        return losses, metrics
 
     def _metrics(self, key, traj, policy, logpi, ent, adv):
         pass

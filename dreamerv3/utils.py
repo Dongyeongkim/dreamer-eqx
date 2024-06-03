@@ -577,7 +577,7 @@ class TwoHotDist:
         )
         return (target * log_pred).sum(-1).sum(self.dims)
 
-
+# THIS PART SHOULD BE FIXED; NEED TO BE APPLICABLE ON EQX PARAMS. USE PARTIAL AND COMBINE, TO MANIPULATE THE PARAMS.
 class SlowUpdater(eqx.Module):
     updates: int = eqx.field()
 
