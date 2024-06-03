@@ -70,7 +70,7 @@ class WorldModel(eqx.Module):
         prev_actions = jnp.concatenate(
             [prev_action[:, None, ...], data["action"][:, :-1, ...]], 1
         )
-        _, outs = self.rssm.observe(
+        carry, outs = self.rssm.observe(
             step_key, prev_latent, prev_actions, embeds, data["is_first"]
         )
         loss, metrics = self.rssm.loss(loss_key, outs)
@@ -87,7 +87,7 @@ class WorldModel(eqx.Module):
                 dist = head(feat)
             loss.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
 
-        return loss, metrics
+        return loss, (carry, outs, metrics)
 
     def imagine(self, key, policy, start, horizon):
         first_cont = (1.0 - start["is_terminal"]).astype("float32")

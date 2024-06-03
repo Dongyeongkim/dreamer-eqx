@@ -23,8 +23,22 @@ class DreamerV3:
                 ac2_key, self.wm, self.act_space, self.config
             )
 
-    def train(self):
+    def init_policy(self, batch_size):
         pass
 
-    def loss(self):
+    def init_train(self, batch_size):
         pass
+
+
+    def policy(self):
+        pass
+
+    def train(self, key, data, state):
+        wm_loss_key, ac_loss_key = random.split(key, num=2)
+        pass
+
+
+    def loss(self, key, data, state):
+        wm_loss_key, ac_loss_key = random.split(key, num=2)
+        wm_loss, (wm_carry, wm_outs, wm_metrics) = self.wm.loss(wm_loss_key, data, state)
+        ac_loss, ac_metrics = self.task_behavior.loss(ac_loss_key, self.wm.imagine, wm_carry)
