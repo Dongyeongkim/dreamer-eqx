@@ -63,10 +63,10 @@ class WorldModel(eqx.Module):
         )  # act_space should be integer
         return prev_latent, prev_action
 
-    def loss(self, key, data, state):
+    def loss(self, key, carry, data):
         step_key, loss_key = random.split(key, num=2)
         embeds = eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])
-        prev_latent, prev_action = state
+        prev_latent, prev_action = carry
         prev_actions = jnp.concatenate(
             [prev_action[:, None, ...], data["action"][:, :-1, ...]], 1
         )
@@ -224,6 +224,10 @@ class ImagActorCritic(eqx.Module):
 
     def initial(self, batch_size):
         return {}
+    
+    def policy(self, carry, latent):
+        return carry, {"action": self.actor(get_feat(latent))}
+        
 
     def loss(self, key, imagine, start, update=True):
         metrics = {}
