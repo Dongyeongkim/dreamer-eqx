@@ -5,10 +5,10 @@ import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from typing import List
-from utils import symlog, symexp, cast_to_compute
-from utils import OneHotDist, MSEDist, HuberDist
-from utils import TransformedMseDist, TwoHotDist
-from utils import traj_reset, tensorstats
+from .utils import symlog, symexp, cast_to_compute
+from .utils import OneHotDist, MSEDist, HuberDist
+from .utils import TransformedMseDist, TwoHotDist
+from .utils import traj_reset, tensorstats
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
@@ -436,7 +436,7 @@ class ImageEncoder(eqx.Module):
     def __init__(
         self,
         key,
-        debug_outer,
+        outer,
         channel_depth,
         channel_mults,
         kernel_size,
@@ -456,7 +456,7 @@ class ImageEncoder(eqx.Module):
 
         self._conv_layers = []
         for i in range(len(channel_mults)):
-            stride_ = 1 if (debug_outer and (i == 0)) else stride
+            stride_ = 1 if (outer and (i == 0)) else stride
             key, param_key = random.split(key, num=2)
             self._conv_layers.append(
                 Conv2D(
@@ -502,7 +502,7 @@ class ImageDecoder(eqx.Module):
         deter,
         latent_dim,
         latent_cls,
-        debug_outer,
+        outer,
         channel_depth,
         channel_mults,
         kernel_size,
@@ -569,7 +569,7 @@ class ImageDecoder(eqx.Module):
         self.num_groups = num_groups
         self._convtr_layers = []
         for i in reversed(range(1, len(channels))):
-            stride_ = 1 if (debug_outer and (i == (len(channels) - 1))) else stride
+            stride_ = 1 if (outer and (i == (len(channels) - 1))) else stride
             key, param_key = random.split(key, num=2)
             if i == len(channels) - 1:
                 self._convtr_layers.append(
@@ -652,6 +652,10 @@ class MLP(eqx.Module):
         num_units,
         act,
         norm,
+        unimix=0.0,
+        bins=255,
+        minstd=1.0,
+        maxstd=1.0,
         out_shape=None,
         dist="mse",
         use_bias=True,
@@ -708,10 +712,10 @@ class MLP(eqx.Module):
                 in_features=num_units,
                 out_shape=out_shape,
                 dist=dist,
-                minstd=1.0,
-                maxstd=1.0,
-                unimix=0.0,
-                bins=255,
+                minstd=minstd,
+                maxstd=maxstd,
+                unimix=unimix,
+                bins=bins,
                 outscale=0.1,
                 use_bias=True,
                 winit="normal",
@@ -731,7 +735,8 @@ class MLP(eqx.Module):
         x = x.reshape([-1, x.shape[-1]])
         for layer in self.layers:
             x = layer(x)
-        x = x.reshape((*input_shape[:2], -1))
+        if len(input_shape) > 2:
+            x = x.reshape((*input_shape[:2], -1))
         if self.out_shape:
             x = self.dist(x)
             return x
@@ -777,7 +782,7 @@ class Dist(eqx.Module):
         self.unimix = unimix
         self.bins = bins
         self._dist = dist
-        self.shape = ()
+        self.shape = out_shape
         self.out_shape = out_shape if isinstance(out_shape, tuple) else tuple(out_shape)
         self.num_unit = int(np.prod(self.out_shape))
         self.pdtype = pdtype
