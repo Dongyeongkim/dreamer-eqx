@@ -1,5 +1,4 @@
 import jax
-import optax
 import numpy as np
 import equinox as eqx
 from jax import random

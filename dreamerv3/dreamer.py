@@ -42,7 +42,7 @@ class DreamerV3:
         _, latent = self.wm.rssm.obs_step(
             prev_latent, (prev_action, embed, obs["is_first"])
         )
-        self.expl_behavior.policy(latent, expl_state)
+        self.expl_behavior.policy(expl_state, latent)
         task_outs, latent = self.task_behavior.policy(task_state, latent)
         expl_outs, latent = self.expl_behavior.policy(expl_state, latent)
 
@@ -73,3 +73,4 @@ class DreamerV3:
         ac_loss, ac_metrics = self.task_behavior.loss(
             ac_loss_key, self.wm.imagine, wm_carry
         )
+        pass
