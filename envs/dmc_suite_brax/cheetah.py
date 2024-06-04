@@ -2,8 +2,7 @@ import jax
 import mujoco
 from brax import base
 from brax.io import mjcf
-from brax.mjx.base import State
-from brax.envs.base import PipelineEnv
+from brax.envs.base import PipelineEnv, State
 
 import jax.numpy as jnp
 from etils import epath

@@ -1,2 +1,2 @@
-from cheetah import Cheetah
-from walker import Walker2d
+from .cheetah import Cheetah
+from .walker import Walker2d

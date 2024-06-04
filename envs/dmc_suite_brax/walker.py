@@ -1,9 +1,9 @@
+import os
 import jax
 import mujoco
 from brax import base
 from brax.io import mjcf
-from brax.mjx.base import State
-from brax.envs.base import PipelineEnv
+from brax.envs.base import PipelineEnv, State
 
 import jax.numpy as jnp
 from etils import epath
@@ -23,7 +23,7 @@ class Walker2d(PipelineEnv):
         exclude_current_positions_from_observation=True,
         **kwargs
     ):
-        path = epath.Path("new_walker.xml")
+        path = epath.Path("/home/dykim/dreamer-eqx/envs/dmc_suite_brax/walker.xml")
         mj_model = mujoco.MjModel.from_xml_path((path).as_posix())
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
         mj_model.opt.iterations = 6
