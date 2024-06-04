@@ -4,7 +4,7 @@ encoder:
   act: "silu"
   norm: "rms"
   winit: "normal"
-  debug_outer: True
+  outer: True
   kernel_size: 5
   stride: 2
   minres: 4
@@ -40,7 +40,7 @@ decoder:
   act: "silu"
   norm: "rms"
   winit: "normal"
-  debug_outer: True
+  outer: True
   kernel_size: 5
   stride: 2
   minres: 4

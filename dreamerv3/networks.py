@@ -436,7 +436,7 @@ class ImageEncoder(eqx.Module):
     def __init__(
         self,
         key,
-        debug_outer,
+        outer,
         channel_depth,
         channel_mults,
         kernel_size,
@@ -456,7 +456,7 @@ class ImageEncoder(eqx.Module):
 
         self._conv_layers = []
         for i in range(len(channel_mults)):
-            stride_ = 1 if (debug_outer and (i == 0)) else stride
+            stride_ = 1 if (outer and (i == 0)) else stride
             key, param_key = random.split(key, num=2)
             self._conv_layers.append(
                 Conv2D(
@@ -502,7 +502,7 @@ class ImageDecoder(eqx.Module):
         deter,
         latent_dim,
         latent_cls,
-        debug_outer,
+        outer,
         channel_depth,
         channel_mults,
         kernel_size,
@@ -569,7 +569,7 @@ class ImageDecoder(eqx.Module):
         self.num_groups = num_groups
         self._convtr_layers = []
         for i in reversed(range(1, len(channels))):
-            stride_ = 1 if (debug_outer and (i == (len(channels) - 1))) else stride
+            stride_ = 1 if (outer and (i == (len(channels) - 1))) else stride
             key, param_key = random.split(key, num=2)
             if i == len(channels) - 1:
                 self._convtr_layers.append(
