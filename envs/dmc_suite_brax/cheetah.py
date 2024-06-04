@@ -8,6 +8,7 @@ from brax.envs.base import PipelineEnv
 import jax.numpy as jnp
 from etils import epath
 
+
 class Cheetah(PipelineEnv):
     def __init__(
         self,
@@ -17,7 +18,7 @@ class Cheetah(PipelineEnv):
         exclude_current_positions_from_observation=True,
         **kwargs
     ):
-        path=epath.Path('cheetah.xml')
+        path = epath.Path("cheetah.xml")
         mj_model = mujoco.MjModel.from_xml_path((path).as_posix())
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
         mj_model.opt.iterations = 6
@@ -25,8 +26,8 @@ class Cheetah(PipelineEnv):
         sys = mjcf.load_model(mj_model)
         n_frames = 5
 
-        kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
-        kwargs['backend']='mjx'
+        kwargs["n_frames"] = kwargs.get("n_frames", n_frames)
+        kwargs["backend"] = "mjx"
         super().__init__(sys=sys, **kwargs)
 
         self._forward_reward_weight = forward_reward_weight
@@ -51,17 +52,17 @@ class Cheetah(PipelineEnv):
         obs = self._get_obs(pipeline_state)
         reward, done, zero = jnp.zeros(3)
         metrics = {
-            'x_position': zero,
-            'x_velocity': zero,
-            'reward_ctrl': zero,
-            'reward_run': zero,
+            "x_position": zero,
+            "x_velocity": zero,
+            "reward_ctrl": zero,
+            "reward_run": zero,
         }
         return State(pipeline_state, obs, reward, done, metrics)
 
     def step(self, state: State, action: jnp.ndarray) -> State:
         """Runs one timestep of the environment's dynamics."""
         pipeline_state0 = state.pipeline_state
-        #assert pipeline_state0  is not None
+        # assert pipeline_state0  is not None
         pipeline_state = self.pipeline_step(pipeline_state0, action)
 
         x_velocity = (
@@ -82,11 +83,11 @@ class Cheetah(PipelineEnv):
         return state.replace(pipeline_state=pipeline_state, obs=obs, reward=reward)
 
     def _get_obs(self, pipeline_state: base.State) -> jnp.ndarray:
-      """Returns the environment observations."""
-      position = pipeline_state.q
-      velocity = pipeline_state.qd
+        """Returns the environment observations."""
+        position = pipeline_state.q
+        velocity = pipeline_state.qd
 
-      if self._exclude_current_positions_from_observation:
-        position = position[1:]
+        if self._exclude_current_positions_from_observation:
+            position = position[1:]
 
-      return jnp.concatenate((position, velocity))
+        return jnp.concatenate((position, velocity))

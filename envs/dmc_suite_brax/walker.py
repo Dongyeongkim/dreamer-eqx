@@ -9,6 +9,7 @@ import jax.numpy as jnp
 from etils import epath
 from typing import Tuple
 
+
 class Walker2d(PipelineEnv):
     def __init__(
         self,
@@ -22,15 +23,15 @@ class Walker2d(PipelineEnv):
         exclude_current_positions_from_observation=True,
         **kwargs
     ):
-        path=epath.Path('new_walker.xml')
+        path = epath.Path("new_walker.xml")
         mj_model = mujoco.MjModel.from_xml_path((path).as_posix())
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
         mj_model.opt.iterations = 6
         mj_model.opt.ls_iterations = 6
         sys = mjcf.load_model(mj_model)
         n_frames = 4
-        kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
-        kwargs['backend'] = 'mjx'
+        kwargs["n_frames"] = kwargs.get("n_frames", n_frames)
+        kwargs["backend"] = "mjx"
         super().__init__(sys=sys, **kwargs)
 
         self._forward_reward_weight = forward_reward_weight
@@ -52,20 +53,18 @@ class Walker2d(PipelineEnv):
         qpos = self.sys.init_q + jax.random.uniform(
             rng1, (self.sys.q_size(),), minval=low, maxval=hi
         )
-        qvel = jax.random.uniform(
-            rng2, (self.sys.qd_size(),), minval=low, maxval=hi
-        )
+        qvel = jax.random.uniform(rng2, (self.sys.qd_size(),), minval=low, maxval=hi)
 
         pipeline_state = self.pipeline_init(qpos, qvel)
 
         obs = self._get_obs(pipeline_state)
         reward, done, zero = jnp.zeros(3)
         metrics = {
-            'reward_forward': zero,
-            'reward_ctrl': zero,
-            'reward_healthy': zero,
-            'x_position': zero,
-            'x_velocity': zero,
+            "reward_forward": zero,
+            "reward_ctrl": zero,
+            "reward_healthy": zero,
+            "x_position": zero,
+            "x_velocity": zero,
         }
         return State(pipeline_state, obs, reward, done, metrics)
 
