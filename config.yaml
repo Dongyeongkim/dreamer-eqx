@@ -99,7 +99,7 @@ agent:
   return_lambda: 0.95
 
 env:
-  num_env: 11
+  num_env: 16
   env_name: "walker2d"
   use_image: True
   width: 64
