@@ -84,7 +84,7 @@ agent:
   task_behavior: "Greedy"
   expl_behavior: "None"
   critic_type: "vfunction"
-  actor: { num_layers: 3, num_units: 1024, act: 'silu', norm: 'rms', dist: 'mse', minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: 'normal', in_features: 10240 }
+  actor: { num_layers: 3, num_units: 1024, act: 'silu', norm: 'rms', dist: 'normal', minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: 'normal', in_features: 10240 }
   critic: { num_layers: 3, num_units: 1024, act: 'silu', norm: 'rms', dist: 'symexp_twohot', outscale: 0.0, winit: 'normal', bins: 255, in_features: 10240 }
   actor_dist_disc: 'onehot'
   actor_dist_cont: 'normal'

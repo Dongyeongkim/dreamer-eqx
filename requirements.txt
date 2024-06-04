@@ -10,3 +10,4 @@ einops
 optax
 orbax-checkpoint
 tensorboard
+tensorboardX

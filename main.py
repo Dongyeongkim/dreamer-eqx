@@ -1,8 +1,11 @@
-from envs import VecDmEnvWrapper, Walker2d, Cheetah
-import hydra
-import ml_collections
 import os
+os.environ["MUJOCO_GL"] = "egl"
+os.environ["MUJOCO_RENDERER"] = "egl"
+from envs import VecDmEnvWrapper, Walker2d, Cheetah
+
+import hydra
 import dreamerv3
+import ml_collections
 from jax import random
 from jax import numpy as jp
 
@@ -30,8 +33,6 @@ def make_dreamer(env, config, key):
 def main(cfg):
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
-    os.environ["MUJOCO_GL"] = "egl"
-    os.environ["MUJOCO_RENDERER"] = "egl"
 
     key = random.key(config.seed)
     env = make_env(**config.env)

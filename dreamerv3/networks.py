@@ -782,7 +782,7 @@ class Dist(eqx.Module):
         self.unimix = unimix
         self.bins = bins
         self._dist = dist
-        self.shape = ()
+        self.shape = out_shape
         self.out_shape = out_shape if isinstance(out_shape, tuple) else tuple(out_shape)
         self.num_unit = int(np.prod(self.out_shape))
         self.pdtype = pdtype
