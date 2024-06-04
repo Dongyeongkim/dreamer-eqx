@@ -43,8 +43,8 @@ def main(cfg):
         print(f"Epoch {epoch}")
         states = env.reset()
         for i in range(config.num_steps):
-            dreamer_state, actions = dreamer.policy(key, dreamer_state, states)
-            step_res = env.step(actions)
+            dreamer_state, outs = dreamer.policy(key, dreamer_state, states)
+            step_res = env.step(outs["action"])
             if step_res.last():
                 break
             key, _ = random.split(key)
@@ -53,8 +53,8 @@ def main(cfg):
     states = env.reset()
     dreamer_state = dreamer.policy_initial(config['env']['num_env'])
     for i in range(100):
-        dreamer_state, actions = dreamer.policy(key, states.observation, dreamer_state)
-        states = env.step(actions)
+        dreamer_state, outs = dreamer.policy(key, dreamer_state, states)
+        states = env.step(outs["action"])
         history.append(env.render())
 
     history = jp.stack(history)
