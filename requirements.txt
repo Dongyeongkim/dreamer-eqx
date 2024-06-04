@@ -1,0 +1,12 @@
+hydra-core
+ml_collections
+brax
+dm-env
+jax
+mujoco
+tensorflow-probability
+equinox
+einops
+optax
+orbax-checkpoint
+tensorboard

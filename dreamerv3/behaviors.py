@@ -1,9 +1,9 @@
-import jax
 import equinox as eqx
 import jax.numpy as jnp
-from utils import OneHotDist, get_feat
+from jax import random
+from .utils import OneHotDist, get_feat
 from ml_collections import FrozenConfigDict
-from models import ImagActorCritic, VFunction
+from .models import ImagActorCritic, VFunction
 from tensorflow_probability.substrates import jax as tfp
 tfd = tfp.distributions
 
@@ -12,17 +12,18 @@ class Greedy(eqx.Module):
     ac: eqx.Module
     def __init__(self, key, wm, act_space, config):
         rewfn = lambda s: wm.heads["reward"](get_feat(s)).mean()[:, 1:]
-        if config.critic_type == "vfunction":
-            critics = {"extr": VFunction(rewfn, config, name="critic")}
+        criticKey, acKey = random.split(key)
+        if config.agent.critic_type == "vfunction":
+            critics = {"extr": VFunction(criticKey, rewfn, config)}
         else:
-            raise NotImplementedError(config.critic_type)
-        self.ac = ImagActorCritic(key, critics, {"extr": 1.0}, act_space, config, name="ac")
+            raise NotImplementedError(config.agent.critic_type)
+        self.ac = ImagActorCritic(acKey, critics, {"extr": 1.0}, act_space, config)
 
     def initial(self, batch_size):
         return self.ac.initial(batch_size)
 
-    def policy(self, latent, state):
-        return self.ac.policy(latent, state)
+    def policy(self, state, latent):
+        return self.ac.policy(state, latent)
 
     def loss(self, key, imagine, start, acts):
         return self.ac.loss(key, imagine, start, acts)
@@ -41,7 +42,7 @@ class Random(eqx.Module):
     def initial(self, batch_size):
         return jnp.zeros(batch_size)
 
-    def policy(self, latent, state):
+    def policy(self, state, latent):
         batch_size = len(state)
         shape = (batch_size,) + self.act_space.shape
         if self.act_space.discrete:

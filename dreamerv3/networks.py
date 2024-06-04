@@ -5,10 +5,10 @@ import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from typing import List
-from utils import symlog, symexp, cast_to_compute
-from utils import OneHotDist, MSEDist, HuberDist
-from utils import TransformedMseDist, TwoHotDist
-from utils import traj_reset, tensorstats
+from .utils import symlog, symexp, cast_to_compute
+from .utils import OneHotDist, MSEDist, HuberDist
+from .utils import TransformedMseDist, TwoHotDist
+from .utils import traj_reset, tensorstats
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
@@ -652,6 +652,10 @@ class MLP(eqx.Module):
         num_units,
         act,
         norm,
+        unimix=0.0,
+        bins=255,
+        minstd=1.0,
+        maxstd=1.0,
         out_shape=None,
         dist="mse",
         use_bias=True,
@@ -708,10 +712,10 @@ class MLP(eqx.Module):
                 in_features=num_units,
                 out_shape=out_shape,
                 dist=dist,
-                minstd=1.0,
-                maxstd=1.0,
-                unimix=0.0,
-                bins=255,
+                minstd=minstd,
+                maxstd=maxstd,
+                unimix=unimix,
+                bins=bins,
                 outscale=0.1,
                 use_bias=True,
                 winit="normal",
@@ -731,7 +735,8 @@ class MLP(eqx.Module):
         x = x.reshape([-1, x.shape[-1]])
         for layer in self.layers:
             x = layer(x)
-        x = x.reshape((*input_shape[:2], -1))
+        if len(input_shape) > 2:
+            x = x.reshape((*input_shape[:2], -1))
         if self.out_shape:
             x = self.dist(x)
             return x

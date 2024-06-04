@@ -3,7 +3,7 @@ import numpy as np
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
-from utils import (
+from .utils import (
     MSEDist,
     Moments,
     get_feat,
@@ -12,7 +12,7 @@ from utils import (
     image_grid,
     add_colour_frame,
 )
-from networks import RSSM, ImageEncoder, ImageDecoder, MLP
+from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
 from typing import Callable
 
@@ -29,6 +29,7 @@ class WorldModel(eqx.Module):
     config: FrozenConfigDict
 
     def __init__(self, key, obs_space, act_space, config):
+        assert len(act_space.shape) == 1
         encoder_param_key, rssm_param_key, heads_param_key = random.split(key, num=3)
         self.obs_space = obs_space
         self.act_space = act_space
@@ -58,7 +59,7 @@ class WorldModel(eqx.Module):
     def initial(self, batch_size):
         prev_latent = self.rssm.initial(batch_size)
         prev_action = jnp.zeros(
-            (batch_size, self.act_space)
+            (batch_size, self.act_space.shape[0])
         )  # act_space should be integer
         return prev_latent, prev_action
 
@@ -121,7 +122,7 @@ class WorldModel(eqx.Module):
         }
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont, cont[:, 1:]], 1)
-        discount = 1 if self.config.contdisc else 1 - 1 / self.config.horizon
+        discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
         traj["weight"] = jnp.cumprod(discount * traj["cont"], 1) / discount
         return traj
 
@@ -205,20 +206,10 @@ class ImagActorCritic(eqx.Module):
     config: FrozenConfigDict
 
     def __init__(self, key, critics, scales, act_space, config):
-        kwargs = {}
-        kwargs["shape"] = {
-            k: (*s.shape, s.classes) if s.discrete else s.shape
-            for k, s in self.act_space.items()
-        }
-        kwargs["dist"] = {
-            k: config.actor_dist_disc if v.discrete else config.actor_dist_cont
-            for k, v in self.act_space.items()
-        }
-
-        self.actor = MLP(key, **kwargs, **config.actor)
+        self.actor = MLP(key, **config.agent.actor, out_shape=act_space.shape)
         self.critic = critics
-        self.retnorm = Moments(**config.retnrom)
-        self.advnorm = Moments(**config.advnorm)
+        self.retnorm = Moments(**config.agent.retnorm)
+        self.advnorm = Moments(**config.agent.advnorm)
         self.config = FrozenConfigDict(config)
 
     def initial(self, batch_size):
@@ -232,7 +223,7 @@ class ImagActorCritic(eqx.Module):
         metrics = {}
         losses = {}
         policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
-        traj = imagine(key, policy, start, self.config.imag_horizon)
+        traj = imagine(key, policy, start, self.config.agent.imag_horizon)
         traj = {k: sg(v) for k, v in traj.items()}
         rew, ret, tarval, critic, slowcritic = self.critic.score(traj)
 
@@ -248,7 +239,7 @@ class ImagActorCritic(eqx.Module):
             traj["weight"][:, :-1]
             * -(
                 critic.log_prob(sg(ret_padded))
-                + self.config.slowreg * critic.log_prob(sg(slowcritic.mean()))
+                + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
             )[:, :-1]
         )
 
@@ -257,7 +248,7 @@ class ImagActorCritic(eqx.Module):
         logpi = sum([v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()])
         ents = {k: v.entropy()[:, :-1] for k, v in actor.items()}
         losses["actor_loss"] = traj["weight"][:, :-1] * -(
-            logpi * sg(adv_normed) + self.config.actent * sum(ents.values())
+            logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
         )
         return losses, metrics
 
@@ -268,15 +259,16 @@ class ImagActorCritic(eqx.Module):
 class VFunction(eqx.Module):
     net: eqx.Module
     slow: eqx.Module
+    valnorm: eqx.Module
     updater: eqx.Module
     rewfn: Callable
     config: FrozenConfigDict
 
     def __init__(self, key, rewfn, config):
         net_key, slow_key = random.split(key, num=2)
-        self.net = MLP(net_key, out_shape=(), **config.critic)
-        self.slow = MLP(slow_key, out_shape=(), **config.critic)
-        self.valnorm = Moments(**config.valnorm)
+        self.net = MLP(net_key, out_shape=(), **config.agent.critic)
+        self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
+        self.valnorm = Moments(**config.agent.valnorm)
         self.updater = eqx.nn.Identity()
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
@@ -292,12 +284,12 @@ class VFunction(eqx.Module):
         voffset, vscale = self.valnorm.stats()
         val = critic.mean() * vscale + voffset
         slowval = slowcritic.mean() * vscale + voffset
-        tarval = slowval if self.config.slowtar else val
-        discount = 1 if self.config.contdisc else 1 - 1 / self.config.horizon
+        tarval = slowval if self.config.agent.slowtar else val
+        discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
 
         rets = [tarval[:, -1]]
         disc = traj["cont"][:, 1:] * discount
-        lam = self.config.return_lambda
+        lam = self.config.agent.return_lambda
         interm = rew[:, 1:] + (1 - lam) * disc * tarval[:, 1:]
         for t in reversed(range(disc.shape[1])):
             rets.append(interm[:, t] + disc[:, t] * lam * rets[-1])
