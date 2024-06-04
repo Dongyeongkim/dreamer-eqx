@@ -12,18 +12,18 @@ from typing import Tuple
 
 class Walker2d(PipelineEnv):
     def __init__(
-        self,
-        forward_reward_weight: float = 1.0,
-        ctrl_cost_weight: float = 1e-3,
-        healthy_reward: float = 1.0,
-        terminate_when_unhealthy: bool = True,
-        healthy_z_range: Tuple[float, float] = (0.8, 2.0),
-        healthy_angle_range=(-1.0, 1.0),
-        reset_noise_scale=5e-3,
-        exclude_current_positions_from_observation=True,
-        **kwargs
+            self,
+            forward_reward_weight: float = 1.0,
+            ctrl_cost_weight: float = 1e-3,
+            healthy_reward: float = 1.0,
+            terminate_when_unhealthy: bool = True,
+            healthy_z_range: Tuple[float, float] = (0.8, 2.0),
+            healthy_angle_range=(-1.0, 1.0),
+            reset_noise_scale=5e-3,
+            exclude_current_positions_from_observation=True,
+            **kwargs
     ):
-        path = epath.Path("/home/dykim/dreamer-eqx/envs/dmc_suite_brax/walker.xml")
+        path = epath.Path(os.path.normpath(os.path.join(__file__, '..', 'walker.xml')))
         mj_model = mujoco.MjModel.from_xml_path((path).as_posix())
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
         mj_model.opt.iterations = 6
@@ -74,15 +74,15 @@ class Walker2d(PipelineEnv):
         pipeline_state = self.pipeline_step(pipeline_state0, action)
 
         x_velocity = (
-            pipeline_state.x.pos[0, 0] - pipeline_state0.x.pos[0, 0]
-        ) / self.dt
+                             pipeline_state.x.pos[0, 0] - pipeline_state0.x.pos[0, 0]
+                     ) / self.dt
         forward_reward = self._forward_reward_weight * x_velocity
 
         z, angle = pipeline_state.x.pos[0, 2], pipeline_state.q[2]
         min_z, max_z = self._healthy_z_range
         min_angle, max_angle = self._healthy_angle_range
         is_healthy = (
-            (z > min_z) & (z < max_z) * (angle > min_angle) & (angle < max_angle)
+                (z > min_z) & (z < max_z) * (angle > min_angle) & (angle < max_angle)
         )
         if self._terminate_when_unhealthy:
             healthy_reward = self._healthy_reward
@@ -116,3 +116,26 @@ class Walker2d(PipelineEnv):
             position = position[1:]
 
         return jnp.concatenate((position, velocity))
+
+
+if __name__ == '__main__':
+    env = Walker2d()
+    jit_env_reset = jax.jit(env.reset)
+    jit_env_step = jax.jit(env.step)
+    state = jit_env_reset(jax.random.key(0))
+    states = []
+
+    for i in range(600):
+        print(f'step {i}')
+        action = jax.random.uniform(jax.random.key(i), (env.action_size,))
+        state = jit_env_step(state, action)
+        states.append(state)
+
+    import tempfile
+    import webbrowser
+    from brax.io import html
+
+    with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html') as f:
+        url = 'file://' + f.name
+        f.write(html.render(env.sys, [state.pipeline_state for state in states]))
+        webbrowser.open(url)
