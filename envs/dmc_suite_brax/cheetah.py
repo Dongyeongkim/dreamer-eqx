@@ -1,3 +1,4 @@
+import os
 import jax
 import mujoco
 from brax import base
@@ -17,7 +18,7 @@ class Cheetah(PipelineEnv):
         exclude_current_positions_from_observation=True,
         **kwargs
     ):
-        path = epath.Path("cheetah.xml")
+        path = epath.Path(os.path.normpath(os.path.join(__file__, "..", "cheetah.xml")))
         mj_model = mujoco.MjModel.from_xml_path((path).as_posix())
         mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
         mj_model.opt.iterations = 6
