@@ -48,7 +48,7 @@ def main(cfg):
         print(f"Epoch {epoch}")
         states = env.reset()
         a = time()
-        for i in tqdm.tqdm(range(config.num_steps)):
+        while True:
             dreamer_state, outs = eqx.filter_jit(dreamer.policy)(key, dreamer_state, states)
             step_res = env.step(outs["action"])
             key, _ = random.split(key)
