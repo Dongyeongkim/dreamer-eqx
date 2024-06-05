@@ -37,11 +37,11 @@ def rollout_fn(key, env, policy, states):
     def step_fn(carry, _):
         carry["key"], policy_key = random.split(carry["key"], num=2)
         carry["policy_state"], outs = policy(policy_key, carry["policy_state"], carry["env_state"])
-        carry["env_state"] = env.step(outs["action"])
+        carry["inner_state"], carry["env_state"] = env.step(carry["inner_state"], outs["action"])
         return carry, {**carry, **outs}
 
-    policy_state, env_state = states
-    carry = {"key": key, "policy_state": policy_state, "env_state": env_state}
+    policy_state, inner_state, env_state = states
+    carry = {"key": key, "policy_state": policy_state, "env_state": env_state, "inner_state": inner_state}
     carry, outs = jax.lax.scan(step_fn, carry, jnp.arange(1000), unroll=False)
     return carry, outs
 
@@ -67,9 +67,9 @@ def main(cfg):
 
     for epoch in range(config.num_epoch):
         print(f"Epoch {epoch}")
-        env_state = env.reset()
+        inner_state, env_state = env.reset()
         a = time()
-        carry, outs = rollout_fn(jax.random.key(0), env, dreamer.policy, (dreamer_state, env_state))
+        carry, outs = rollout_fn(jax.random.key(0), env, dreamer.policy, (dreamer_state, inner_state, env_state))
         b = time()
         print(f"fps: {(config.env.num_env * config.num_steps) / (b - a)}, elapsed time: {b - a}")
 

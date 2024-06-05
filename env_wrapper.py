@@ -29,8 +29,8 @@ class DMC_JAX:
         )
         return {"action": action}
 
-    def step(self, action):
-        time_step = self._env.step(action)
+    def step(self, inner_state, action):
+        inner_state, time_step = self._env.step(inner_state, action)
         # assert time_step.discount in (0, 1) disable this assertion due to vecotrise feaature
         obs = {
             "reward": time_step.reward,
@@ -41,10 +41,10 @@ class DMC_JAX:
             "action": action,
             "discount": time_step.discount,
         }
-        return obs
+        return inner_state, obs
 
     def reset(self):
-        time_step = self._env.reset()
+        inner_state, time_step = self._env.reset()
         obs = {
             "reward": 0.0,
             "is_first": jnp.ones_like(self._env.num_env),
@@ -54,7 +54,7 @@ class DMC_JAX:
             "action": jnp.zeros_like(self.act_space["action"].sample()),
             "discount": time_step.discount,
         }
-        return obs
+        return inner_state, obs
 
     def __getattr__(self, name):
         if name == "obs_space":

@@ -24,7 +24,6 @@ class VecDmEnvWrapper(dm_env.Environment):
         self._step_limit = step_limit
         self.seed(seed)
         self.backend = backend
-        self._states = None
         self.num_env = num_env
 
         self.width = width
@@ -84,30 +83,30 @@ class VecDmEnvWrapper(dm_env.Environment):
 
     def reset(self):
         self._step_count = 0
-        self._states, obs, self._key = self._reset(self._key)
-        return dm_env.TimeStep(
+        states, obs, self._key = self._reset(self._key)
+        return states, dm_env.TimeStep(
             step_type=dm_env.StepType.FIRST,
             reward=None,
             discount=jp.ones(dtype="float32", shape=(self.num_env,)),
-            observation=self.render() if self.use_image else obs,
+            observation=self.render(states) if self.use_image else obs,
         )
 
-    def step(self, action):
-        self._states, obs, reward, done, info = self._step(self._states, action)
+    def step(self, states, action):
+        states, obs, reward, done, info = self._step(states, action)
         self._step_count += 1
         if self._step_count >= self._step_limit:
-            return dm_env.TimeStep(
+            return states, dm_env.TimeStep(
                 step_type=dm_env.StepType.LAST,
                 reward=reward,
                 discount=jp.zeros(dtype="float32", shape=(self.num_env,)),
-                observation=self.render() if self.use_image else obs,
+                observation=self.render(states) if self.use_image else obs,
             )
         else:
-            return dm_env.TimeStep(
+            return states, dm_env.TimeStep(
                 step_type=dm_env.StepType.MID,
                 reward=reward,
                 discount=jp.ones(dtype="float32", shape=(self.num_env,)),
-                observation=self.render() if self.use_image else obs,
+                observation=self.render(states) if self.use_image else obs,
             )
 
     def seed(self, seed: int = 0):
@@ -125,8 +124,8 @@ class VecDmEnvWrapper(dm_env.Environment):
     def discount_spec(self):
         return self._discount_spec
 
-    def render(self):
-        sys, states = self._env.sys, self._states
+    def render(self, states):
+        sys = self._env.sys
         if states is None:
             raise RuntimeError("must call reset or step before rendering")
 
