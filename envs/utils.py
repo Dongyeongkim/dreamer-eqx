@@ -127,7 +127,7 @@ class VecDmEnvWrapper(dm_env.Environment):
 
     def discount_spec(self):
         return self._discount_spec
-
+    
     def render(self):
         sys, states = self._env.sys, self._states
         if states is None:
@@ -140,14 +140,13 @@ class VecDmEnvWrapper(dm_env.Environment):
 
         q = states.pipeline_state.q
         qd = states.pipeline_state.qd
-        return jax.numpy.array(
-            image.render_array(
-                sys,
-                [VState(q[i], qd[i]) for i in range(self.num_env)],
-                self.width,
-                self.height,
-            )
-        )
+        
+        rendered = image.render_array(
+            sys,
+            [VState(q[i], qd[i]) for i in range(self.num_env)],
+            self.width,
+            self.height,)
+        return jax.numpy.array(rendered)
 
 
 if __name__ == "__main__":
