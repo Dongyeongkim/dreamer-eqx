@@ -8,18 +8,17 @@ import jax
 from jax import numpy as jp
 
 
-
 class VecDmEnvWrapper(dm_env.Environment):
     def __init__(
-        self,
-        env: PipelineEnv,
-        step_limit: int = 1000,
-        seed: int = 0,
-        backend: Optional[str] = None,
-        num_env: int = 1,
-        width: int = 256,
-        height: int = 256,
-        use_image: bool = False,
+            self,
+            env: PipelineEnv,
+            step_limit: int = 1000,
+            seed: int = 0,
+            backend: Optional[str] = None,
+            num_env: int = 1,
+            width: int = 256,
+            height: int = 256,
+            use_image: bool = False,
     ):
         self._env = env
         self._step_limit = step_limit
@@ -102,16 +101,14 @@ class VecDmEnvWrapper(dm_env.Environment):
                 reward=reward,
                 discount=jp.zeros(dtype="float32", shape=(self.num_env,)),
                 observation=self.render() if self.use_image else obs,
-                )
+            )
         else:
             return dm_env.TimeStep(
                 step_type=dm_env.StepType.MID,
                 reward=reward,
                 discount=jp.ones(dtype="float32", shape=(self.num_env,)),
                 observation=self.render() if self.use_image else obs,
-                ) 
-            
-        
+            )
 
     def seed(self, seed: int = 0):
         self._key = jax.random.key(seed)
@@ -127,7 +124,7 @@ class VecDmEnvWrapper(dm_env.Environment):
 
     def discount_spec(self):
         return self._discount_spec
-    
+
     def render(self):
         sys, states = self._env.sys, self._states
         if states is None:
@@ -140,13 +137,18 @@ class VecDmEnvWrapper(dm_env.Environment):
 
         q = states.pipeline_state.q
         qd = states.pipeline_state.qd
-        
-        rendered = image.render_array(
-            sys,
-            [VState(q[i], qd[i]) for i in range(self.num_env)],
-            self.width,
-            self.height,)
-        return jax.numpy.array(rendered)
+
+        def render_array(q, qd, num_env, width, height):
+            rendered = image.render_array(
+                sys,
+                [VState(q[i], qd[i]) for i in range(num_env)],
+                width,
+                height)
+            return jax.numpy.array(rendered)
+
+        return jax.pure_callback(render_array,
+                                 jax.ShapeDtypeStruct((self.num_env, self.width, self.height, 3), "uint8"), q, qd,
+                                 self.num_env, self.width, self.height)
 
 
 if __name__ == "__main__":

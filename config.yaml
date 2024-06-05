@@ -104,6 +104,7 @@ env:
   use_image: True
   width: 64
   height: 64
+  use_egl: False
 
 
 hydra:
