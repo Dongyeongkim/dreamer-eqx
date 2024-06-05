@@ -8,8 +8,8 @@ import ml_collections
 from jax import random
 
 
-def make_env(env_name: str, use_egl=False, **kwargs):
-    if use_egl:
+def make_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
+    if use_egl and support_gpu:
         os.environ["MUJOCO_GL"] = "egl"
         os.environ["MUJOCO_RENDERER"] = "egl"
     from envs import VecDmEnvWrapper, Walker2d, Cheetah
@@ -52,9 +52,14 @@ def main(cfg):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
+    try:
+        support_gpu = len(jax.devices("gpu")) > 0
+    except RuntimeError:
+        support_gpu = False
+
     key = random.key(config.seed)
     print(f"Environment is compiling...")
-    env = make_env(**config.env)
+    env = make_env(**config.env, support_gpu=support_gpu)
     print(f"Compiling is done...")
     dreamer = make_dreamer(env, config, key)
     dreamer_state = dreamer.policy_initial(config['env']['num_env'])
