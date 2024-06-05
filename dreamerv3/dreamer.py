@@ -36,12 +36,11 @@ class DreamerV3:
 
     def policy(self, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
-        embed = self.wm.encoder(obs.observation)
+        embed = self.wm.encoder(obs["observation"])
         (prev_latent, prev_action), task_state, expl_state = state
         prev_latent["key"] = obs_key
         _, latent = self.wm.rssm.obs_step(
-            prev_latent, (prev_action, embed, jnp.bool(obs.first()))
-        )
+            prev_latent, (prev_action, embed, obs["is_first"]))
         task_state, task_outs = self.task_behavior.policy(task_state, latent)
         expl_state, expl_outs = self.expl_behavior.policy(expl_state, latent)
 

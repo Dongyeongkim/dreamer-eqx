@@ -8,10 +8,12 @@ import jax
 from jax import numpy as jp
 
 
+
 class VecDmEnvWrapper(dm_env.Environment):
     def __init__(
         self,
         env: PipelineEnv,
+        step_limit: int = 1000,
         seed: int = 0,
         backend: Optional[str] = None,
         num_env: int = 1,
@@ -20,6 +22,7 @@ class VecDmEnvWrapper(dm_env.Environment):
         use_image: bool = False,
     ):
         self._env = env
+        self._step_limit = step_limit
         self.seed(seed)
         self.backend = backend
         self._states = None
@@ -28,7 +31,6 @@ class VecDmEnvWrapper(dm_env.Environment):
         self.width = width
         self.height = height
         self.use_image = use_image
-
         if hasattr(self._env, "observation_spec"):
             self._observation_spec = self._env.observation_spec()
         else:
@@ -53,9 +55,9 @@ class VecDmEnvWrapper(dm_env.Environment):
                 name="action",
             )
 
-        self._reward_spec = specs.Array(shape=(), dtype="float32", name="reward")
+        self._reward_spec = specs.Array(shape=(self.num_env,), dtype="float32", name="reward")
         self._discount_spec = specs.BoundedArray(
-            shape=(), dtype="float32", minimum=0.0, maximum=1.0, name="discount"
+            shape=(self.num_env,), dtype="float32", minimum=0.0, maximum=1.0, name="discount"
         )
         if hasattr(self._env, "discount_spec"):
             self._discount_spec = self._env.discount_spec()
@@ -82,6 +84,7 @@ class VecDmEnvWrapper(dm_env.Environment):
         self._step = jax.jit(step, backend=self.backend)
 
     def reset(self):
+        self._step_count = 0
         self._states, obs, self._key = self._reset(self._key)
         return dm_env.TimeStep(
             step_type=dm_env.StepType.FIRST,
@@ -91,14 +94,24 @@ class VecDmEnvWrapper(dm_env.Environment):
         )
 
     def step(self, action):
-        self._states, obs, reward, done, info = self._step(self._states, action)
-        del info
-        return dm_env.TimeStep(
-            step_type=dm_env.StepType.MID if not done.any() else dm_env.StepType.LAST,
-            reward=reward,
-            discount=jp.ones(dtype="float32", shape=(self.num_env,)),
-            observation=self.render() if self.use_image else obs,
-        )
+        self._states, obs, reward, done, _ = self._step(self._states, action)
+        self._step_count += 1
+        if self._step_count >= self._step_limit:
+            return dm_env.TimeStep(
+                step_type=dm_env.StepType.LAST,
+                reward=reward,
+                discount=jp.zeros(dtype="float32", shape=(self.num_env,)),
+                observation=self.render() if self.use_image else obs,
+                )
+        else:
+            return dm_env.TimeStep(
+                step_type=dm_env.StepType.MID,
+                reward=reward,
+                discount=jp.ones(dtype="float32", shape=(self.num_env,)),
+                observation=self.render() if self.use_image else obs,
+                ) 
+            
+        
 
     def seed(self, seed: int = 0):
         self._key = jax.random.key(seed)
