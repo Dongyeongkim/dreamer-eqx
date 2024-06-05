@@ -11,11 +11,11 @@ from .utils import (
     subsample,
     image_grid,
     add_colour_frame,
+    SlowUpdater,
 )
 from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
 from typing import Callable
-
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
@@ -139,7 +139,7 @@ class WorldModel(eqx.Module):
             self.rssm.initial(8),
             data["action"][:8, ...],
             eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-                :8, ...
+            :8, ...
             ],
             data["is_first"][:8, ...],
         )
@@ -160,7 +160,7 @@ class WorldModel(eqx.Module):
             self.rssm.initial(8),
             data["action"][:8, :5, ...],
             eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-                :8, :5, ...
+            :8, :5, ...
             ],
             data["is_first"][:8, :5, ...],
         )
@@ -214,10 +214,9 @@ class ImagActorCritic(eqx.Module):
 
     def initial(self, batch_size):
         return {}
-    
+
     def policy(self, carry, latent):
         return carry, {"action": self.actor(get_feat(latent))}
-        
 
     def loss(self, key, imagine, start, update=True):
         metrics = {}
@@ -236,11 +235,11 @@ class ImagActorCritic(eqx.Module):
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["critic_loss"] = (
-            traj["weight"][:, :-1]
-            * -(
-                critic.log_prob(sg(ret_padded))
-                + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
-            )[:, :-1]
+                traj["weight"][:, :-1]
+                * -(
+                           critic.log_prob(sg(ret_padded))
+                           + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
+                   )[:, :-1]
         )
 
         actor = self.actor(get_feat(traj))
@@ -248,7 +247,7 @@ class ImagActorCritic(eqx.Module):
         logpi = sum([v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()])
         ents = {k: v.entropy()[:, :-1] for k, v in actor.items()}
         losses["actor_loss"] = traj["weight"][:, :-1] * -(
-            logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
+                logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
         )
         return losses, metrics
 
@@ -270,13 +269,14 @@ class VFunction(eqx.Module):
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
         self.valnorm = Moments(**config.agent.valnorm)
         self.updater = eqx.nn.Identity()
+        self.updater = SlowUpdater()
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 
     def score(self, traj, actor=None):
         rew = self.rewfn(traj)
         assert (
-            len(rew) == len(traj["action"]) - 1
+                len(rew) == len(traj["action"]) - 1
         ), "should provide rewards for all but last action"
 
         critic = self.net(traj)

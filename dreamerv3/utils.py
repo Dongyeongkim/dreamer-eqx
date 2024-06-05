@@ -11,6 +11,7 @@ import orbax.checkpoint as ocp
 from jax.tree_util import tree_map
 from tensorflow_probability.substrates import jax as tfp
 from optax._src.clipping import unitwise_norm, unitwise_clip
+from optree.typing import PyTree
 
 tfd = tfp.distributions
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
@@ -580,30 +581,19 @@ class TwoHotDist:
 class SlowUpdater(eqx.Module):
     updates: int = eqx.field()
 
-    def __init__(self, src, dst, fraction=1.0, period=1):
-        self.src = src
-        self.dst = dst
+    def __init__(self, fraction=1.0, period=1):
         self.fraction = fraction
         self.period = period
         self.updates = 0
 
-    def __call__(self):
-        assert self.src.find()
+    def __call__(self, src: PyTree, dst: PyTree):
         updates = self.updates
         need_init = updates == 0
         need_update = updates % self.period == 0
         mix = jnp.clip(1.0 * need_init + self.fraction * need_update, 0, 1)
-        params = {
-            k.replace(f"/{self.src.name}/", f"/{self.dst.name}/"): v
-            for k, v in self.src.find().items()
-        }
-        ema = tree_map(lambda s, d: mix * s + (1 - mix) * d, params, self.dst.find())
-        for name, param in ema.items():
-            assert (
-                    param.dtype == jnp.float32
-            ), f"EMA of {name} should be float32 not {param.dtype}"
-        self.dst.put(ema)
+        ema = tree_map(lambda s, d: mix * s + (1 - mix) * d, src, dst)
         self.updates = updates + 1
+        return ema
 
 
 class Moments(eqx.Module):

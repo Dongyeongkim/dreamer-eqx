@@ -63,7 +63,6 @@ def main(cfg):
     print(f"Compiling is done...")
     dreamer = make_dreamer(env, config, key)
     dreamer_state = dreamer.policy_initial(config['env']['num_env'])
-    # updater = dreamerv3.utils.SlowUpdater()
 
     for epoch in range(config.num_epoch):
         print(f"Epoch {epoch}")
