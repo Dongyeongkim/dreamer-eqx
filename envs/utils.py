@@ -93,7 +93,7 @@ class VecDmEnvWrapper(dm_env.Environment):
         )
 
     def step(self, action):
-        self._states, obs, reward, done, _ = self._step(self._states, action)
+        self._states, obs, reward, done, info = self._step(self._states, action)
         self._step_count += 1
         if self._step_count >= self._step_limit:
             return dm_env.TimeStep(

@@ -41,6 +41,7 @@ class DreamerV3:
         prev_latent["key"] = obs_key
         _, latent = self.wm.rssm.obs_step(
             prev_latent, (prev_action, embed, obs["is_first"]))
+        _, _ = latent.pop("post"), latent.pop("prior")
         task_state, task_outs = self.task_behavior.policy(task_state, latent)
         expl_state, expl_outs = self.expl_behavior.policy(expl_state, latent)
 
