@@ -10,10 +10,13 @@ class ReplayBuffer:
 
         self.buffer = {}
         self.left = {}
+        self._top = None
 
-    def push(self, data: Dict[str, jp.ndarray]):
+    def push(self, data: Dict[str, jp.ndarray], downgrade_dim=False):
         for k, v in data.items():
             if k in self.left and self.left[k] is not None:
+                if downgrade_dim:
+                    v = v.reshape(-1, *v.shape[2:])
                 data = jp.concatenate([self.left[k], v], axis=0)
                 self.left[k] = None
             else:
@@ -30,6 +33,11 @@ class ReplayBuffer:
                 self.left[k] = data
 
     def pop(self):
+        if self._top is not None:
+            ret = self._top
+            self._top = None
+            return ret
+
         data = {}
         for k, v in self.buffer.items():
             if not v.empty():
@@ -37,3 +45,7 @@ class ReplayBuffer:
             else:
                 return None
         return data
+
+    def top(self):
+        self._top = self.pop()
+        return self._top
