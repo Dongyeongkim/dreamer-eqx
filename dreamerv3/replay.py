@@ -9,32 +9,31 @@ from typing import Dict
 
 
 class ReplayBuffer:
-    def __init__(self, desireable_key_and_dim, chunk_size=1024):
-        self.deskeydim = desireable_key_and_dim
+    def __init__(self, buffer_size, key_and_desired_dim, chunk_size=1024):
+        self.buffer_size = buffer_size
+        self.deskeydim = key_and_desired_dim
         self.chunk_size = chunk_size
-        self.num_chunk = 0
+        self.chunk_id = 0
 
         self.buffer = {}
-        self.left = {}
+        self.left = {k: [] for k in self.deskeydim.keys()}
 
     def push(self, data: Dict[str, jnp.ndarray]):
-        data = tree_map(lambda x, y: self.transform2ds(x, y), (data, self.deskeydim))
-        for k, v in data.items():
-            if k in self.left and self.left[k] is not None:
-                chunk = jax.device_put(jnp.concatenate([self.left[k], v], axis=0), device=jax.devices("cpu")[0])
-                self.left[k] = None
+        data = tree_map(self.transform2ds, data, self.deskeydim)
+        prechunk = tree_map(self.pusharray, data, self.left)
+        self.left = {k: [] for k in self.deskeydim.keys()}
+        while True:
+            chunk = tree_map(self.getarray, prechunk)
+            left = tree_map(self.leftoverarray, prechunk)
+            if None in chunk.values():
+                self.left = tree_map(self.pusharray, left, self.left)
+                break
             else:
-                chunk = jax.device_put(v, device=jax.devices("cpu")[0])
-
-            if k not in self.buffer:
-                self.buffer[k] = deque()
-
-            while len(chunk) >= self.chunk_size:
-                self.buffer[k].put(chunk[:self.chunk_size])
-                chunk = chunk[self.chunk_size:]
-
-            if len(chunk) > 0:
-                self.left[k] = chunk
+                if self.chunk_id * self.chunk_size > self.buffer_size:
+                    self.chunk_id = 0
+                self.buffer.update({self.chunk_id: chunk})
+                self.chunk_id += 1
+                prechunk = left
 
     def pop(self):
         data = {}
@@ -44,6 +43,27 @@ class ReplayBuffer:
             else:
                 return None
         return data
+    
+    def pusharray(self, data, leftover):
+        if len(leftover) == 0:
+            return jax.device_put(data, device=jax.devices("cpu")[0])
+        else:
+            return jax.device_put(jnp.concatenate([leftover, data], axis=0), device=jax.devices("cpu")[0])
+    
+    def getarray(self, data):
+        if len(data) >= self.chunk_size:
+            return data[:self.chunk_size]
+        else:
+            return None
+        
+    def leftoverarray(self, data):
+        if len(data) > self.chunk_size:
+            return data[self.chunk_size:]
+        elif len(data) == self.chunk_size:
+            return []
+        else:
+            return data
+
     
     def transform2ds(self, data: jnp.array, expected_dim: int):
         # IMPORTANT: EXPECTED SHAPE -> (T, B, ...)
@@ -60,3 +80,10 @@ class ReplayBuffer:
         assert len(data.shape) == expected_dim, "dimension does not fit with expected dim"
         assert self.chunk_size % batch_size == 0
         return einops.rearrange(data, '(t b) ... -> b t ...', b=batch_size, t=self.chunk_size//batch_size)
+
+
+
+if __name__ == "__main__":
+    rb = ReplayBuffer(100_000_000, {"obs": 4, "action": 2})
+    rb.push({"obs": jnp.zeros((64, 64, 64, 3)), "action": jnp.zeros((64, 6))})
+    breakpoint()
