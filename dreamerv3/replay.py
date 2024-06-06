@@ -24,7 +24,7 @@ class ReplayBuffer:
                 chunk = jax.device_put(jnp.concatenate([self.left[k], v], axis=0), device=jax.devices("cpu")[0])
                 self.left[k] = None
             else:
-                chunk = v
+                chunk = jax.device_put(v, device=jax.devices("cpu")[0])
 
             if k not in self.buffer:
                 self.buffer[k] = deque()
