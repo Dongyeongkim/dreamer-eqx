@@ -1,5 +1,6 @@
 import jax
 import einops
+import equinox as eqx
 import jax.numpy as jnp
 from collections import deque
 from jax.tree_util import tree_map
@@ -18,6 +19,8 @@ class ReplayBuffer:
         self.buffer = {}
         self.left = {k: [] for k in self.deskeydim.keys()}
 
+
+    @eqx.filter_jit
     def push(self, data: Dict[str, jnp.ndarray]):
         data = tree_map(self.transform2ds, data, self.deskeydim)
         prechunk = tree_map(self.pusharray, data, self.left)
@@ -84,6 +87,12 @@ class ReplayBuffer:
 
 
 if __name__ == "__main__":
-    rb = ReplayBuffer(100_000_000, {"obs": 4, "action": 2})
-    rb.push({"obs": jnp.zeros((64, 64, 64, 3)), "action": jnp.zeros((64, 6))})
-    breakpoint()
+    import time
+    rb = ReplayBuffer(5_000_000, {"obs": 4, "action": 2})
+    elapsed_times = []
+    for _ in range(100):
+        a = time.time()
+        rb.push({"obs": jnp.zeros((1000, 64, 64, 3)), "action": jnp.zeros((1000, 6))})
+        b = time.time() - a
+        elapsed_times.append(b)
+    print(f"average push time is:: {sum(elapsed_times) / len(elapsed_times)}")
