@@ -20,7 +20,6 @@ class ReplayBuffer:
         self.left = {k: [] for k in self.deskeydim.keys()}
 
 
-    @eqx.filter_jit
     def push(self, data: Dict[str, jnp.ndarray]):
         data = tree_map(self.transform2ds, data, self.deskeydim)
         prechunk = tree_map(self.pusharray, data, self.left)
