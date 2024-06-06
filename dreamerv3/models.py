@@ -269,7 +269,6 @@ class VFunction(eqx.Module):
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
         self.valnorm = Moments(**config.agent.valnorm)
         self.updater = eqx.nn.Identity()
-        self.updater = SlowUpdater()
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 

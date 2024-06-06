@@ -1,7 +1,8 @@
 from typing import Optional
 
+import mujoco
+import numpy as np
 from brax.envs.base import PipelineEnv
-from brax.io import image
 import dm_env
 from dm_env import specs
 import jax
@@ -80,6 +81,8 @@ class VecDmEnvWrapper(dm_env.Environment):
             )
 
         self._step = jax.jit(step, backend=self.backend)
+        self.renderer = [mujoco.Renderer(self._env.sys.mj_model, height=height, width=width) for _ in range(num_env)]
+        self.axes = jp.arange(num_env).reshape(-1, 1)
 
     def reset(self):
         self._step_count = 0
@@ -124,30 +127,26 @@ class VecDmEnvWrapper(dm_env.Environment):
     def discount_spec(self):
         return self._discount_spec
 
+    def render_array(self, renderer: mujoco.Renderer, sys, q, qd) -> np.ndarray:
+        d = mujoco.MjData(sys.mj_model)
+        d.qpos, d.qvel = q, qd
+        mujoco.mj_forward(sys.mj_model, d)
+        renderer.update_scene(d, camera=-1)
+        return renderer.render()
+
     def render(self, states):
         sys = self._env.sys
-        if states is None:
-            raise RuntimeError("must call reset or step before rendering")
 
-        class VState:
-            def __init__(self, q, qd):
-                self.q = q
-                self.qd = qd
-
-        q = states.pipeline_state.q
-        qd = states.pipeline_state.qd
-
-        def render_array(q, qd, num_env, width, height):
-            rendered = image.render_array(
-                sys,
-                [VState(q[i], qd[i]) for i in range(num_env)],
-                width,
-                height)
+        def render_array(i, q, qd):
+            renderer = self.renderer[i.item()]
+            rendered = self.render_array(renderer, sys, q, qd)
             return jax.numpy.array(rendered)
 
-        return jax.pure_callback(render_array,
-                                 jax.ShapeDtypeStruct((self.num_env, self.width, self.height, 3), "uint8"), q, qd,
-                                 self.num_env, self.width, self.height)
+        def render_one(q, qd, i):
+            return jax.pure_callback(render_array,
+                                     jax.ShapeDtypeStruct((self.width, self.height, 3), "uint8"), i, q, qd)
+
+        return jax.vmap(render_one)(states.pipeline_state.q, states.pipeline_state.qd, self.axes)
 
 
 if __name__ == "__main__":
