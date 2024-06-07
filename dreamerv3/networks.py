@@ -518,13 +518,9 @@ class ImageDecoder(eqx.Module):
         pdtype="float32",
         cdtype="float32",
     ):
-        assert (
-            num_units % (minres**2) == 0
-        ), "units should be divisible by the square of minres"
         channels = (
             (3 if use_rgb else 1,)
             + tuple([channel_depth * mult for mult in channel_mults[:-1]])
-            + tuple([num_units // (minres**2)])
         )
 
         key, param_key = random.split(key, num=2)
@@ -553,14 +549,14 @@ class ImageDecoder(eqx.Module):
         self._stoch_proj = Linear(
             param_key,
             in_features=2 * num_units,
-            out_features=num_units,
+            out_features=(minres**2) * channels[-1],
             act=act,
             norm=norm,
             pdtype=pdtype,
             cdtype=cdtype,
         )
         self._space_norm = Norm(
-            num_features=num_units // (minres**2),
+            num_features=channels[-1],
             impl=norm,
             act=act,
             pdtype=pdtype,

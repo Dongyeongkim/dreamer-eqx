@@ -29,12 +29,11 @@ class WorldModel(eqx.Module):
     config: FrozenConfigDict
 
     def __init__(self, key, obs_space, act_space, config):
-        assert len(act_space.shape) == 1
         encoder_param_key, rssm_param_key, heads_param_key = random.split(key, num=3)
         self.obs_space = obs_space
         self.act_space = act_space
         self.encoder = ImageEncoder(encoder_param_key, **config.encoder)
-        self.rssm = RSSM(rssm_param_key, **config.rssm)
+        self.rssm = RSSM(rssm_param_key, action_dim=act_space, **config.rssm)
         dec_param_key, rew_param_key, cont_param_key = random.split(
             heads_param_key, num=3
         )
@@ -59,7 +58,7 @@ class WorldModel(eqx.Module):
     def initial(self, batch_size):
         prev_latent = self.rssm.initial(batch_size)
         prev_action = jnp.zeros(
-            (batch_size, self.act_space.shape[0])
+            (batch_size, self.act_space)
         )  # act_space should be integer
         return prev_latent, prev_action
 
@@ -206,7 +205,7 @@ class ImagActorCritic(eqx.Module):
     config: FrozenConfigDict
 
     def __init__(self, key, critics, scales, act_space, config):
-        self.actor = MLP(key, **config.agent.actor, out_shape=act_space.shape)
+        self.actor = MLP(key, **config.agent.actor, out_shape=(act_space,) if isinstance(act_space, int) else act_space)
         self.critic = critics
         self.retnorm = Moments(**config.agent.retnorm)
         self.advnorm = Moments(**config.agent.advnorm)
