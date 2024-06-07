@@ -1,8 +1,6 @@
 import jax
 import einops
-import equinox as eqx
 import jax.numpy as jnp
-from collections import deque
 from jax.tree_util import tree_map
 
 from typing import Dict
@@ -10,9 +8,11 @@ from typing import Dict
 
 
 class ReplayBuffer:
-    def __init__(self, buffer_size, key_and_desired_dim, chunk_size=1024):
+    def __init__(self, buffer_size, key_and_desired_dim, batch_size, chunk_size=1024):
+        assert chunk_size % batch_size == 0
         self.buffer_size = buffer_size
         self.deskeydim = key_and_desired_dim
+        self.batch_size = batch_size
         self.chunk_size = chunk_size
         self.chunk_id = 0
 
@@ -30,28 +30,27 @@ class ReplayBuffer:
             if None in chunk.values():
                 self.left = tree_map(self.pusharray, left, self.left)
                 break
-            else:
-                if self.chunk_id * self.chunk_size > self.buffer_size:
-                    self.chunk_id = 0
-                self.buffer.update({self.chunk_id: chunk})
-                self.chunk_id += 1
-                prechunk = left
+            
+            idx = self.chunk_id % (self.buffer_size // self.chunk_size)
+            self.buffer.update({idx: chunk})
+            self.chunk_id += 1
+            prechunk = left
 
-    def pop(self):
-        data = {}
-        for k, v in self.buffer.items():
-            if not v.empty():
-                data[k] = jax.device_put(v.popleft(), device=jax.devices()[0])
-            else:
-                return None
+    def sample(self, key):
+        if self.chunk_id > self.buffer_size // self.chunk_size:
+            idx = int(jax.random.choice(key, jnp.arange(self.buffer_size // self.chunk_size)))
+        else:
+            idx = int(jax.random.choice(key, jnp.arange(self.chunk_id)))
+        data = tree_map(self.transform2batch, self.buffer[idx], self.deskeydim)
+        data = jax.device_get(data)
         return data
     
     def pusharray(self, data, leftover):
         if len(leftover) == 0:
             return jax.device_put(data, device=jax.devices("cpu")[0])
         else:
-            return jax.device_put(jnp.concatenate([leftover, data], axis=0), device=jax.devices("cpu")[0])
-    
+            return jax.lax.concatenate([leftover, jax.device_put(data, device=jax.devices("cpu")[0])], 0)
+
     def getarray(self, data):
         if len(data) >= self.chunk_size:
             return data[:self.chunk_size]
@@ -59,10 +58,8 @@ class ReplayBuffer:
             return None
         
     def leftoverarray(self, data):
-        if len(data) > self.chunk_size:
+        if len(data) >= self.chunk_size:
             return data[self.chunk_size:]
-        elif len(data) == self.chunk_size:
-            return []
         else:
             return data
 
@@ -78,20 +75,30 @@ class ReplayBuffer:
         else:
             raise NotImplementedError("Something is wrong")
     
-    def transform2batch(self, data: jnp.array, expected_dim: int, batch_size: int):
+    def transform2batch(self, data: jnp.array, expected_dim: int):
         assert len(data.shape) == expected_dim, "dimension does not fit with expected dim"
-        assert self.chunk_size % batch_size == 0
-        return einops.rearrange(data, '(t b) ... -> b t ...', b=batch_size, t=self.chunk_size//batch_size)
+        return einops.rearrange(data, '(t b) ... -> b t ...', b=self.batch_size, t=self.chunk_size//self.batch_size)
 
 
 
 if __name__ == "__main__":
     import time
-    rb = ReplayBuffer(5_000_000, {"obs": 4, "action": 2})
+    rb = ReplayBuffer(1_000_000, {"obs": 4, "action": 2}, 16)
     elapsed_times = []
-    for _ in range(100):
+    for i in range(100):
         a = time.time()
-        rb.push({"obs": jnp.zeros((1000, 64, 64, 3)), "action": jnp.zeros((1000, 6))})
+        rb.push({"obs": jnp.zeros((2000, 64, 64, 3)), "action": jnp.zeros((2000, 6))})
         b = time.time() - a
         elapsed_times.append(b)
+        print(f"num of data pushes: {i}, num of current number of insertion of chunk: {rb.chunk_id}\n num of current number of chunk: {rb.buffer.keys()}\n num of ready to be merged into chunk: {rb.left['action'].shape}\n")
     print(f"average push time is:: {sum(elapsed_times) / len(elapsed_times)}")
+    elapsed_time = []
+    key = jax.random.key(0)
+    for i in range(100):
+        key, partial_key = jax.random.split(key, num=2)
+        a = time.time()
+        data = rb.sample(partial_key)
+        b = time.time() - a
+        print(i, data.keys(), data['obs'].shape)
+        elapsed_times.append(b)
+    print(f"average sample time is:: {sum(elapsed_times) / len(elapsed_times)}")
