@@ -36,13 +36,13 @@ class ReplayBuffer:
             self.chunk_id += 1
             prechunk = left
 
-    def sample(self, key):
+    def sample(self, key, device=None):
         if self.chunk_id > self.buffer_size // self.chunk_size:
             idx = int(jax.random.choice(key, jnp.arange(self.buffer_size // self.chunk_size)))
         else:
             idx = int(jax.random.choice(key, jnp.arange(self.chunk_id)))
         data = tree_map(self.transform2batch, self.buffer[idx], self.deskeydim)
-        data = jax.device_get(data)
+        data = tree_map(self.poparray, data, {k: jax.devices()[0] if device is None else device for k in self.deskeydim.keys()})
         return data
     
     def pusharray(self, data, leftover):
@@ -50,6 +50,9 @@ class ReplayBuffer:
             return jax.device_put(data, device=jax.devices("cpu")[0])
         else:
             return jax.lax.concatenate([leftover, jax.device_put(data, device=jax.devices("cpu")[0])], 0)
+    
+    def poparray(self, data, device):
+        return jax.device_put(data, device)
 
     def getarray(self, data):
         if len(data) >= self.chunk_size:
@@ -85,7 +88,7 @@ if __name__ == "__main__":
     import time
     rb = ReplayBuffer(1_000_000, {"obs": 4, "action": 2}, 16)
     elapsed_times = []
-    for i in range(100):
+    for i in range(500):
         a = time.time()
         rb.push({"obs": jnp.zeros((2000, 64, 64, 3)), "action": jnp.zeros((2000, 6))})
         b = time.time() - a
@@ -94,11 +97,13 @@ if __name__ == "__main__":
     print(f"average push time is:: {sum(elapsed_times) / len(elapsed_times)}")
     elapsed_time = []
     key = jax.random.key(0)
+    datas = []
     for i in range(100):
         key, partial_key = jax.random.split(key, num=2)
         a = time.time()
         data = rb.sample(partial_key)
         b = time.time() - a
-        print(i, data.keys(), data['obs'].shape)
+        print(i, data.keys(), data['obs'].shape, data['obs'].device_buffer.device())
+        datas.append(data)
         elapsed_times.append(b)
     print(f"average sample time is:: {sum(elapsed_times) / len(elapsed_times)}")
