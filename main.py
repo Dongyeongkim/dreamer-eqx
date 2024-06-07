@@ -8,13 +8,14 @@ import jax.numpy as jnp
 import jax.random as random
 from craftax.craftax_env import make_craftax_env_from_name
 from craftax_wrapper import BatchEnvWrapper, OptimisticResetVecEnvWrapper
+from dreamerv3.replay import ReplayBuffer
 
 
 def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
     if use_egl and support_gpu:
         os.environ["MUJOCO_GL"] = "egl"
         os.environ["MUJOCO_RENDERER"] = "egl"
-    from mjx_envs import VecDmEnvWrapper, Walker2d, Cheetah
+    from envs import VecDmEnvWrapper, Walker2d, Cheetah
     if env_name == "walker2d":
         env = Walker2d()
     elif env_name == "cheetah":
@@ -47,17 +48,13 @@ def make_dreamer(env, config, key):
     return dreamer
 
 
-def craftax_rollout_fn(key, env, agent, agent_state, rollout_num=1000):
+def craftax_rollout_fn(env, agent, states, rollout_num=1000):
     def step_fn(carry, _):
         key, policy_key, step_key = random.split(carry["key"], num=3)
         policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
-        obs, env_state, reward, done, info = env.step(step_key, carry["env_state"], outs["action"].argmax(axis=1), env_params)
-        return {"key": key, "env_state": env_state, "policy_state": policy_state, "observation": obs, "is_first": done}, {"observation": carry["observation"], "action": outs["action"], "reward": reward, "done": done, "info": info}
-    rng, reset_key = jax.random.split(key)
-    env_params = env.default_params
-    first_obs, env_state = env.reset(reset_key, env_params)
-    states = {"key": rng, "env_state": env_state, "policy_state": agent_state, "observation": first_obs, "is_first": jnp.bool_(jnp.ones((env.num_envs,)))}
-    carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
+        obs, env_state, reward, done, info = env.step(step_key, carry["env_state"], outs["action"].argmax(axis=1), env.default_params)
+        return {"key": key, "env_state": env_state, "policy_state": policy_state, "observation": obs, "is_first": done}, {"observation": carry["observation"], "action": outs["action"], "reward": reward, "done": done}
+    carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num))
     return carry, outs
 
 
@@ -71,13 +68,23 @@ def main(cfg):
     print(f"Environment is compiling...")
     env = make_craftax_env(**config.env)
     print(f"Compiling is done...")
+    env_params = env.default_params
+    rng, reset_key = jax.random.split(key)
+    print(f"Setup the environments...")
+    first_obs, env_state = env.reset(reset_key, env_params)
+    print(f"Setting the environments is now done...")
+    print("Building the agent...")
     dreamer = make_dreamer(env, config, key)
     dreamer_state = dreamer.policy_initial(config['env']['num_envs'])
-
+    print("Building the agent is now done...")
+    states = {"key": rng, "env_state": env_state, "policy_state": dreamer_state, "observation": first_obs, "is_first": jnp.bool_(jnp.ones((env.num_envs,)))}
+    rb = ReplayBuffer(buffer_size=5_000_000, key_and_desired_dim={"observation": 4, "action": 2, "reward": 2, "done": 2}, batch_size=16)
+    
     for epoch in range(config.num_epoch):
         print(f"Epoch {epoch}")
         a = time.time()
-        carry, outs = craftax_rollout_fn(jax.random.key(0), env, dreamer, dreamer_state, rollout_num=config.num_steps)
+        states, outs = craftax_rollout_fn(env, dreamer, states, rollout_num=config.num_steps)
+        rb.push(outs)
         b = time.time()
         print(f"fps: {(config.env.num_envs * config.num_steps) / (b - a)}, elapsed time: {b - a}")
 
