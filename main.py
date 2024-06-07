@@ -1,19 +1,20 @@
 import os
 import jax
-import jax.numpy as jnp
-from time import time
+import time
 import hydra
 import dreamerv3
 import ml_collections
-from jax import random
+import jax.numpy as jnp
+import jax.random as random
+from craftax.craftax_env import make_craftax_env_from_name
+from craftax_wrapper import BatchEnvWrapper, OptimisticResetVecEnvWrapper
 
 
-def make_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
+def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
     if use_egl and support_gpu:
         os.environ["MUJOCO_GL"] = "egl"
         os.environ["MUJOCO_RENDERER"] = "egl"
-    from envs import VecDmEnvWrapper, Walker2d, Cheetah
-    from env_wrapper import DMC_JAX
+    from mjx_envs import VecDmEnvWrapper, Walker2d, Cheetah
     if env_name == "walker2d":
         env = Walker2d()
     elif env_name == "cheetah":
@@ -21,28 +22,42 @@ def make_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
     else:
         raise ValueError(f"Unsupported environment: {env_name}")
     env = VecDmEnvWrapper(env, **kwargs)
-    env = DMC_JAX(env)
 
     return env
 
 
+
+def make_craftax_env(env_name: str, autoreset: bool, num_envs: int=1):
+    assert num_envs > 1, "number of the environments must be bigger than 1"
+    env = make_craftax_env_from_name(env_name, not autoreset)
+    if num_envs > 1:
+        if autoreset:
+            env = OptimisticResetVecEnvWrapper(env,
+                                         num_envs=num_envs,
+                                         reset_ratio=16) # fixed value; from the craftax paper
+        else:
+            env = BatchEnvWrapper(env)
+    
+    return env
+
 def make_dreamer(env, config, key):
-    obs_space = env.observation_spec()
-    act_space = env.action_spec()
+    obs_space = env.observation_space(env.default_params).shape
+    act_space = env.action_space(env.default_params).n
     dreamer = dreamerv3.DreamerV3(key, obs_space, act_space, config=config)
     return dreamer
 
 
-def rollout_fn(key, env, policy, states):
+def craftax_rollout_fn(key, env, agent, agent_state, rollout_num=1000):
     def step_fn(carry, _):
-        carry["key"], policy_key = random.split(carry["key"], num=2)
-        carry["policy_state"], outs = policy(policy_key, carry["policy_state"], carry["env_state"])
-        carry["inner_state"], carry["env_state"] = env.step(carry["inner_state"], outs["action"])
-        return carry, {**carry, **outs}
-
-    policy_state, inner_state, env_state = states
-    carry = {"key": key, "policy_state": policy_state, "env_state": env_state, "inner_state": inner_state}
-    carry, outs = jax.lax.scan(step_fn, carry, jnp.arange(1000), unroll=False)
+        key, policy_key, step_key = random.split(carry["key"], num=3)
+        policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
+        obs, env_state, reward, done, info = env.step(step_key, carry["env_state"], outs["action"].argmax(axis=1), env_params)
+        return {"key": key, "env_state": env_state, "policy_state": policy_state, "observation": obs, "is_first": done}, {"observation": carry["observation"], "action": outs["action"], "reward": reward, "done": done, "info": info}
+    rng, reset_key = jax.random.split(key)
+    env_params = env.default_params
+    first_obs, env_state = env.reset(reset_key, env_params)
+    states = {"key": rng, "env_state": env_state, "policy_state": agent_state, "observation": first_obs, "is_first": jnp.bool_(jnp.ones((env.num_envs,)))}
+    carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
     return carry, outs
 
 
@@ -52,25 +67,19 @@ def main(cfg):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-    try:
-        support_gpu = len(jax.devices("gpu")) > 0
-    except RuntimeError:
-        support_gpu = False
-
     key = random.key(config.seed)
     print(f"Environment is compiling...")
-    env = make_env(**config.env, support_gpu=support_gpu)
+    env = make_craftax_env(**config.env)
     print(f"Compiling is done...")
     dreamer = make_dreamer(env, config, key)
-    dreamer_state = dreamer.policy_initial(config['env']['num_env'])
+    dreamer_state = dreamer.policy_initial(config['env']['num_envs'])
 
     for epoch in range(config.num_epoch):
         print(f"Epoch {epoch}")
-        inner_state, env_state = env.reset()
-        a = time()
-        carry, outs = rollout_fn(jax.random.key(0), env, dreamer.policy, (dreamer_state, inner_state, env_state))
-        b = time()
-        print(f"fps: {(config.env.num_env * config.num_steps) / (b - a)}, elapsed time: {b - a}")
+        a = time.time()
+        carry, outs = craftax_rollout_fn(jax.random.key(0), env, dreamer, dreamer_state, rollout_num=config.num_steps)
+        b = time.time()
+        print(f"fps: {(config.env.num_envs * config.num_steps) / (b - a)}, elapsed time: {b - a}")
 
 
 if __name__ == "__main__":
