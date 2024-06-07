@@ -72,7 +72,7 @@ class WorldModel(eqx.Module):
         carry, outs = self.rssm.observe(
             step_key, prev_latent, prev_actions, embeds, data["is_first"]
         )
-        loss, metrics = self.rssm.loss(loss_key, outs)
+        losses, metrics = self.rssm.loss(loss_key, outs)
         for name, head in self.heads.items():
             log_name = name
             data_name = name
@@ -84,9 +84,13 @@ class WorldModel(eqx.Module):
             else:
                 feat = get_feat(outs)
                 dist = head(feat)
-            loss.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
+            losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
+            if self.config.contdisc:
+                del losses["cont"]
+                softlabel = data["cont"] * (1 - 1 / self.config.discount_horizon)
+                losses["cont"] = -dist["cont"].log_prob(softlabel)
 
-        return loss, (carry, outs, metrics)
+        return losses, (carry, outs, metrics)
 
     def imagine(self, key, policy, start, horizon):
         first_cont = (1.0 - start["is_terminal"]).astype("float32")
@@ -138,7 +142,7 @@ class WorldModel(eqx.Module):
             self.rssm.initial(8),
             data["action"][:8, ...],
             eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-            :8, ...
+                :8, ...
             ],
             data["is_first"][:8, ...],
         )
@@ -159,7 +163,7 @@ class WorldModel(eqx.Module):
             self.rssm.initial(8),
             data["action"][:8, :5, ...],
             eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-            :8, :5, ...
+                :8, :5, ...
             ],
             data["is_first"][:8, :5, ...],
         )
@@ -205,7 +209,11 @@ class ImagActorCritic(eqx.Module):
     config: FrozenConfigDict
 
     def __init__(self, key, critics, scales, act_space, config):
-        self.actor = MLP(key, **config.agent.actor, out_shape=(act_space,) if isinstance(act_space, int) else act_space)
+        self.actor = MLP(
+            key,
+            **config.agent.actor,
+            out_shape=(act_space,) if isinstance(act_space, int) else act_space,
+        )
         self.critic = critics
         self.retnorm = Moments(**config.agent.retnorm)
         self.advnorm = Moments(**config.agent.advnorm)
@@ -234,19 +242,21 @@ class ImagActorCritic(eqx.Module):
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["critic_loss"] = (
-                traj["weight"][:, :-1]
-                * -(
-                           critic.log_prob(sg(ret_padded))
-                           + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
-                   )[:, :-1]
+            traj["weight"][:, :-1]
+            * -(
+                critic.log_prob(sg(ret_padded))
+                + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
+            )[:, :-1]
         )
 
         actor = self.actor(get_feat(traj))
 
-        logpi = sum([v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()])
+        logpi = sum(
+            [v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()]
+        )
         ents = {k: v.entropy()[:, :-1] for k, v in actor.items()}
         losses["actor_loss"] = traj["weight"][:, :-1] * -(
-                logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
+            logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
         )
         return losses, metrics
 
@@ -274,7 +284,7 @@ class VFunction(eqx.Module):
     def score(self, traj, actor=None):
         rew = self.rewfn(traj)
         assert (
-                len(rew) == len(traj["action"]) - 1
+            len(rew) == len(traj["action"]) - 1
         ), "should provide rewards for all but last action"
 
         critic = self.net(traj)
