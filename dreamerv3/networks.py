@@ -12,7 +12,7 @@ from .utils import traj_reset, tensorstats
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
-sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
+sg = lambda x: jax.tree_map(jax.lax.stop_gradient, x)
 
 
 class RSSM(eqx.Module):
@@ -267,11 +267,10 @@ class RSSM(eqx.Module):
         )  # change carry and action swapaxes (B, T) -> (T, B)
 
         carry["key"] = key
-        carry, outs = eqx.internal.scan(
+        carry, outs = jax.lax.scan(
             f=lambda *a, **kw: self.obs_step(*a, **kw),
             init=carry,
             xs=(actions, embeds, resets),
-            kind="checkpointed",
         )  # https://github.com/patrick-kidger/equinox/issues/558
         outs = {k: v.swapaxes(tdim, 0) for k, v in outs.items()}
         return carry, outs
@@ -284,11 +283,10 @@ class RSSM(eqx.Module):
         actions = cast_to_compute(actions, self.cdtype)
 
         carry["key"] = key
-        carry, states = eqx.internal.scan(
+        carry, states = jax.lax.scan(
             f=lambda *a, **kw: self.img_step(*a, **kw),
             init=carry,
             xs=actions,
-            kind="checkpointed",
         )  # https://github.com/patrick-kidger/equinox/issues/558
         states = {k: v.swapaxes(tdim, 0) for k, v in states.items()}
         return carry, states

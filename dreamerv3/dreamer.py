@@ -1,8 +1,9 @@
 from . import behaviors
 from jax import random
 import jax.numpy as jnp
+from .utils import Optimizer, SlowUpdater
 from .models import WorldModel
-from dm_env import TimeStep
+
 
 
 class DreamerV3:
@@ -11,8 +12,7 @@ class DreamerV3:
         self.obs_space = obs_space
         self.act_space = act_space
         self.step = step
-
-        self.scales = self.config.loss_scales.copy()
+        self.scales = self.config.loss_scales
 
 
         wm_key, ac_key, ac2_key = random.split(key, num=3)
@@ -27,6 +27,8 @@ class DreamerV3:
             self.expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
                 ac2_key, self.wm, self.act_space, self.config
             )
+        self.updater = SlowUpdater(fraction=self.config.slow_critic_fraction, period=self.config.slow_critic_fraction)
+        self.modules = {"wm": self.wm, "ac": self.task_behavior}
 
     def policy_initial(self, batch_size):
         return (
@@ -64,15 +66,11 @@ class DreamerV3:
             state = ((latent, outs["action"]), task_state, expl_state)
         return state, outs
 
-    def train(self, key, data, state):
-        pass
-
-    def loss(self, key, data, state):
+    def train(self, key, carry, data):
         wm_loss_key, ac_loss_key = random.split(key, num=2)
-        wm_loss, (wm_carry, wm_outs, wm_metrics) = self.wm.loss(
-            wm_loss_key, data, state
-        )
-        ac_loss, ac_metrics = self.task_behavior.loss(
-            ac_loss_key, self.wm.imagine, wm_carry
-        )
-        pass
+
+    def loss(self, key, carry, data):
+        wm_loss_key, ac_loss_key = random.split(key, num=2)
+        wm_losses, (wm_carry, wm_outs, wm_metrics) = self.modules["wm"].loss(wm_loss_key, carry, data)
+        ac_losses, ac_metrics = self.modules["ac"].loss(ac_loss_key, self.modules["wm"].imagine, wm_carry)
+        return {**wm_losses, **ac_losses}

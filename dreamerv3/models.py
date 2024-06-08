@@ -64,7 +64,7 @@ class WorldModel(eqx.Module):
 
     def loss(self, key, carry, data):
         step_key, loss_key = random.split(key, num=2)
-        embeds = eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])
+        embeds = eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["observation"])
         prev_latent, prev_action = carry
         prev_actions = jnp.concatenate(
             [prev_action[:, None, ...], data["action"][:, :-1, ...]], 1
@@ -78,7 +78,7 @@ class WorldModel(eqx.Module):
             data_name = name
             if data_name == "decoder":
                 log_name = "recon"
-                data_name = "image"
+                data_name = "observation"
                 dist = eqx.filter_vmap(head, in_axes=1, out_axes=1)(outs)
                 dist = MSEDist(dist.astype("float32"), 3, "sum")
             else:
@@ -208,7 +208,7 @@ class ImagActorCritic(eqx.Module):
 
     config: FrozenConfigDict
 
-    def __init__(self, key, critics, act_space, config):
+    def __init__(self, key, critics, scales, act_space, config):
         self.actor = MLP(
             key,
             **config.agent.actor,
