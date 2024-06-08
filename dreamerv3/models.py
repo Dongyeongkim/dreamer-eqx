@@ -208,7 +208,7 @@ class ImagActorCritic(eqx.Module):
 
     config: FrozenConfigDict
 
-    def __init__(self, key, critics, scales, act_space, config):
+    def __init__(self, key, critics, act_space, config):
         self.actor = MLP(
             key,
             **config.agent.actor,

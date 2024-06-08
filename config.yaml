@@ -69,6 +69,7 @@ cont_head:
   cdtype: "bfloat16"
 
 discount_horizon: 333
+loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0, critic: 1.0, replay_critic: 0.3}
 
 seed: 0
 gpu_id: 0

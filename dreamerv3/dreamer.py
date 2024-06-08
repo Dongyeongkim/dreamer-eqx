@@ -11,6 +11,10 @@ class DreamerV3:
         self.obs_space = obs_space
         self.act_space = act_space
         self.step = step
+
+        self.scales = self.config.loss_scales.copy()
+
+
         wm_key, ac_key, ac2_key = random.split(key, num=3)
 
         self.wm = WorldModel(wm_key, self.obs_space, self.act_space, self.config)
@@ -61,7 +65,6 @@ class DreamerV3:
         return state, outs
 
     def train(self, key, data, state):
-        wm_loss_key, ac_loss_key = random.split(key, num=2)
         pass
 
     def loss(self, key, data, state):
