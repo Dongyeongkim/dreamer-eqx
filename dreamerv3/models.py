@@ -84,16 +84,19 @@ class WorldModel(eqx.Module):
             else:
                 feat = get_feat(outs)
                 dist = head(feat)
-            losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
-            if self.config.contdisc:
-                del losses["cont"]
-                softlabel = data["cont"] * (1 - 1 / self.config.discount_horizon)
-                losses["cont"] = -dist["cont"].log_prob(softlabel)
+                if log_name == "cont":
+                    if self.config.contdisc:
+                        softlabel = data["cont"] * (1 - 1 / self.config.discount_horizon)
+                        losses.update({log_name: -dist.log_prob(softlabel.astype("float32"))})
+                    else:
+                        losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
+                else:
+                    losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
 
         return losses, (carry, outs, metrics)
 
     def imagine(self, key, policy, start, horizon):
-        first_cont = (1.0 - start["is_terminal"]).astype("float32")
+        first_cont = (1.0 - start["done"]).astype("float32")
         keys = list(self.rssm.initial(1).keys())
         start = {k: v for k, v in start.items() if k in keys}
         wm_key, policy_key = random.split(key, num=2)

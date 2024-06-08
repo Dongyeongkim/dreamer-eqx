@@ -1,78 +1,52 @@
-encoder:
-  channel_depth: 16
-  channel_mults: [ 1, 2, 3, 4, 4 ]
-  act: "silu"
-  norm: "rms"
-  winit: "normal"
-  outer: True
-  kernel_size: 5
-  stride: 2
-  minres: 6
-  cdtype: "bfloat16"
-rssm:
-  deter: 2048
-  hidden: 256
-  latent_dim: 32
-  latent_cls: 16
-  channel_depth: 16
-  channel_mults: [ 1, 2, 3, 4, 4 ]
-  act: "silu"
-  norm: "rms"
-  unimix: 0.01
-  outscale: 1.0
-  winit: "normal"
-  num_imglayer: 2
-  num_obslayer: 1
-  num_dynlayer: 1
-  blocks: 8
-  block_fans: False
-  block_norm: False
-  cdtype: "bfloat16"
-
+---
+encoder: {channel_depth: 16, channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms,
+  winit: normal, outer: true, kernel_size: 5, stride: 2, minres: 4, cdtype: bfloat16}
+rssm: {deter: 2048, hidden: 256, latent_dim: 32, latent_cls: 16, channel_depth: 16,
+  channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms, unimix: 0.01, outscale: 1.0,
+  winit: normal, num_imglayer: 2, num_obslayer: 1, num_dynlayer: 1, blocks: 8, block_fans: false,
+  block_norm: false, cdtype: bfloat16}
 decoder:
-  deter: 3072
+  deter: 2048
   channel_depth: 16
-  channel_mults: [ 1, 2, 3, 4, 4 ]
+  channel_mults: [1, 2, 3, 4, 4]
   latent_dim: 32
   latent_cls: 16
   num_units: 256
-  act: "silu"
-  norm: "rms"
-  winit: "normal"
-  outer: True
+  act: silu
+  norm: rms
+  winit: normal
+  outer: true
   kernel_size: 5
   stride: 2
-  minres: 6
-  use_sigmoid: True
-  cdtype: "bfloat16"
-
+  minres: 4
+  use_sigmoid: true
+  cdtype: bfloat16
 reward_head:
   num_layers: 1
   in_features: 2560
   num_units: 256
-  act: "silu"
-  norm: "rms"
-  dist: "symexp_twohot"
+  act: silu
+  norm: rms
+  dist: symexp_twohot
   outscale: 0.0
-  winit: "normal"
-  cdtype: "bfloat16"
-
+  winit: normal
+  cdtype: bfloat16
 cont_head:
   num_layers: 1
   in_features: 2560
   num_units: 256
-  act: "silu"
-  norm: "rms"
-  dist: "binary"
+  act: silu
+  norm: rms
+  dist: binary
   outscale: 1.0
-  winit: "normal"
-  cdtype: "bfloat16"
-
+  winit: normal
+  cdtype: bfloat16
+contdisc: true
 discount_horizon: 333
-loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0, critic: 1.0, replay_critic: 0.3}
+loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0,
+  critic: 1.0, replay_critic: 0.3}
 slow_critic_update: 1
 slow_critic_fraction: 0.02
-
 seed: 0
 gpu_id: 0
 batch_size: 16
@@ -80,30 +54,29 @@ traj_length: 64
 precision: 32
 num_epoch: 10
 num_steps: 1000
-
 agent:
-  task_behavior: "Greedy"
-  expl_behavior: "None"
-  critic_type: "vfunction"
-  actor: { num_layers: 3, num_units: 256, act: 'silu', norm: 'rms', dist: 'onehot', minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: 'normal', in_features: 2560 }
-  critic: { num_layers: 3, num_units: 256, act: 'silu', norm: 'rms', dist: 'symexp_twohot', outscale: 0.0, winit: 'normal', bins: 255, in_features: 2560 }
-  actor_dist_disc: 'onehot'
-  actor_dist_cont: 'normal'
+  task_behavior: Greedy
+  expl_behavior: None
+  critic_type: vfunction
+  actor: {num_layers: 3, num_units: 256, act: silu, norm: rms, dist: onehot, minstd: 0.1,
+    maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: normal, in_features: 2560}
+  critic: {num_layers: 3, num_units: 256, act: silu, norm: rms, dist: symexp_twohot,
+    outscale: 0.0, winit: normal, bins: 255, in_features: 2560}
+  actor_dist_disc: onehot
+  actor_dist_cont: normal
   actent: 3e-4
   slowreg: 1.0
-  slowtar: False
-  retnorm: { impl: 'perc', rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0 }
-  valnorm: { impl: 'off', rate: 0.01, limit: 1e-8 }
-  advnorm: { impl: 'off', rate: 0.01, limit: 1e-8 }
+  slowtar: false
+  retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0}
+  valnorm: {impl: "off", rate: 0.01, limit: 1e-8}
+  advnorm: {impl: "off", rate: 0.01, limit: 1e-8}
   imag_horizon: 15
   horizon: 333
   return_lambda: 0.95
-
 env:
-  env_name: "Craftax-Classic-Pixels-v1"
-  autoreset: True
+  env_name: Craftax-Classic-Pixels-v1
+  autoreset: true
   num_envs: 16
-
 hydra:
   run:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_rssm_detersize_${rssm.deter}

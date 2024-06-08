@@ -518,7 +518,7 @@ class ImageDecoder(eqx.Module):
     ):
         channels = (
             (3 if use_rgb else 1,)
-            + tuple([channel_depth * mult for mult in channel_mults[:-1]])
+            + tuple([channel_depth * mult for mult in channel_mults])
         )
 
         key, param_key = random.split(key, num=2)

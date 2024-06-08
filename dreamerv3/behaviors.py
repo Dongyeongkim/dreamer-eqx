@@ -25,8 +25,8 @@ class Greedy(eqx.Module):
     def policy(self, state, latent):
         return self.ac.policy(state, latent)
 
-    def loss(self, key, imagine, start, acts):
-        return self.ac.loss(key, imagine, start, acts)
+    def loss(self, key, imagine, start):
+        return self.ac.loss(key, imagine, start)
 
     def report(self, data):
         return {}
@@ -51,9 +51,6 @@ class Random(eqx.Module):
             dist = tfd.Uniform(-jnp.ones(shape), jnp.ones(shape))
             dist = tfd.Independent(dist, 1)
         return {"action": dist}, state
-
-    def train(self, imagine, start, data):
-        return None, {}
 
     def report(self, data):
         return {}

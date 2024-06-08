@@ -1,4 +1,5 @@
 import os
+import cv2
 import jax
 import time
 import hydra
@@ -53,7 +54,7 @@ def craftax_rollout_fn(env, agent, states, rollout_num=1000):
         key, policy_key, step_key = random.split(carry["key"], num=3)
         policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
         obs, env_state, reward, done, info = env.step(step_key, carry["env_state"], outs["action"].argmax(axis=1), env.default_params)
-        return {"key": key, "env_state": env_state, "policy_state": policy_state, "observation": obs, "is_first": done}, {"observation": carry["observation"], "action": outs["action"], "reward": reward, "done": done}
+        return {"key": key, "env_state": env_state, "policy_state": policy_state, "observation": jax.image.resize(obs, (obs.shape[0], 64, 64, obs.shape[3]), method="nearest"), "is_first": done, "reward": reward}, {"observation": carry["observation"], "action": outs["action"], "reward": reward, "is_first": carry["is_first"], "cont": (1.0-done)}
     carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num))
     return carry, outs
 
@@ -77,17 +78,15 @@ def main(cfg):
     dreamer = make_dreamer(env, config, key)
     dreamer_state = dreamer.policy_initial(config['env']['num_envs'])
     print("Building the agent is now done...")
-    states = {"key": rng, "env_state": env_state, "policy_state": dreamer_state, "observation": first_obs, "is_first": jnp.bool_(jnp.ones((env.num_envs,)))}
-    rb = ReplayBuffer(buffer_size=5_000_000, key_and_desired_dim={"observation": 4, "action": 2, "reward": 2, "done": 2}, batch_size=16)
-    
-    for epoch in range(config.num_epoch):
-        print(f"Epoch {epoch}")
-        a = time.time()
-        states, outs = craftax_rollout_fn(env, dreamer, states, rollout_num=config.num_steps)
-        rb.push(outs)
-        b = time.time()
-        print(f"fps: {(config.env.num_envs * config.num_steps) / (b - a)}, elapsed time: {b - a}")
-
+    states = {"key": rng, "env_state": env_state, "policy_state": dreamer_state, "observation": jax.image.resize(first_obs, (first_obs.shape[0], 64, 64, first_obs.shape[3]), method="nearest"), "is_first": jnp.bool_(jnp.ones((env.num_envs,))), "reward": jnp.zeros((env.num_envs,))}
+    rb = ReplayBuffer(buffer_size=5_000_000, key_and_desired_dim={"observation": 4, "action": 2, "reward": 1, "is_first": 1, "cont": 1}, batch_size=16, chunk_size=1024)
+    states, outs = craftax_rollout_fn(env, dreamer, states, rollout_num=config.num_steps)
+    print(outs.keys())
+    rb.push(outs)
+    print(rb.buffer.keys())
+    chunk = rb.sample(jax.random.key(0))
+    losses = dreamer.loss(jax.random.key(0), dreamer.train_initial(16), chunk)
+    print(losses)
 
 if __name__ == "__main__":
     main()
