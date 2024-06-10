@@ -13,16 +13,10 @@ decoder: {deter: 2048, channel_depth: 16, channel_mults: [1, 2, 3, 4, 4], latent
 
 reward_head: {num_layers: 1, in_features: 2560, num_units: 256, act: silu, norm: rms, dist: symexp_twohot,
   outscale: 0.0, winit: normal, cdtype: bfloat16}
-cont_head:
-  num_layers: 1
-  in_features: 2560
-  num_units: 256
-  act: silu
-  norm: rms
-  dist: binary
-  outscale: 1.0
-  winit: normal
-  cdtype: bfloat16
+
+cont_head: {num_layers: 1, in_features: 2560, num_units: 256, act: silu, norm: rms, dist: binary, outscale: 1.0, 
+  winit: normal, cdtype: bfloat16}
+
 contdisc: true
 discount_horizon: 333
 loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0,
@@ -33,7 +27,6 @@ seed: 0
 gpu_id: 0
 batch_size: 16
 traj_length: 64
-precision: 32
 num_epoch: 10
 num_steps: 1024
 agent:

@@ -48,7 +48,7 @@ def make_dreamer(env, config, key):
     return dreamer
 
 
-def craftax_rollout_fn(env, agent, states, rollout_num=1000):
+def craftax_rollout_fn(env, agent, states, rollout_num):
     def step_fn(carry, _):
         key, policy_key, step_key = random.split(carry["key"], num=3)
         policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
@@ -72,7 +72,7 @@ def craftax_rollout_fn(env, agent, states, rollout_num=1000):
             "action": outs["action"],
             "reward": reward,
             "is_first": carry["is_first"],
-            "is_terminal": (1.0 - done),
+            "is_terminal": done,
         }
 
     carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
