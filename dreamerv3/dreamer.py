@@ -6,7 +6,6 @@ from .utils import Optimizer, SlowUpdater
 from .models import WorldModel
 
 
-
 class DreamerV3:
     def __init__(self, key, obs_space, act_space, step=0, config=None):
         self.config = config
@@ -14,7 +13,6 @@ class DreamerV3:
         self.act_space = act_space
         self.step = step
         self.scales = self.config.loss_scales
-
 
         wm_key, ac_key, ac2_key = random.split(key, num=3)
 
@@ -28,7 +26,10 @@ class DreamerV3:
             self.expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
                 ac2_key, self.wm, self.act_space, self.config
             )
-        self.updater = SlowUpdater(fraction=self.config.slow_critic_fraction, period=self.config.slow_critic_fraction)
+        self.updater = SlowUpdater(
+            fraction=self.config.slow_critic_fraction,
+            period=self.config.slow_critic_fraction,
+        )
         self.modules = {"wm": self.wm, "ac": self.task_behavior}
 
     def policy_initial(self, batch_size):
@@ -47,7 +48,8 @@ class DreamerV3:
         (prev_latent, prev_action), task_state, expl_state = state
         prev_latent["key"] = obs_key
         _, latent = self.wm.rssm.obs_step(
-            prev_latent, (prev_action, embed, obs["is_first"]))
+            prev_latent, (prev_action, embed, obs["is_first"])
+        )
         _, _ = latent.pop("post"), latent.pop("prior")
         task_state, task_outs = self.task_behavior.policy(task_state, latent)
         expl_state, expl_outs = self.expl_behavior.policy(expl_state, latent)
@@ -72,8 +74,10 @@ class DreamerV3:
 
     def loss(self, key, carry, data):
         wm_loss_key, ac_loss_key = random.split(key, num=2)
-        wm_losses, (wm_carry, wm_outs, wm_metrics) = self.modules["wm"].loss(wm_loss_key, carry, data)
-        rew = data['reward']
-        con = 1 - jnp.float32(data['cont'])
-        B, T = data['is_first'].shape
+        wm_losses, (wm_carry, wm_outs, wm_metrics) = self.modules["wm"].loss(
+            wm_loss_key, carry, data
+        )
+        rew = data["reward"]
+        con = 1 - jnp.float32(data["is_terminal"])
+        B, T = data["is_first"].shape
         return wm_losses
