@@ -252,6 +252,10 @@ class RSSM(eqx.Module):
             stoch=jnp.zeros([bsize, self.latent_dim, self.latent_cls], self.pdtype),
         )
         return cast_to_compute(carry, self.cdtype)
+    
+    def outs_to_carry(self, outs):
+        keys = ('deter', 'stoch')
+        return {k: outs[k][:, -1] for k in keys}
 
     def observe(self, key, carry, actions, embeds, resets, tdim=1):
 
