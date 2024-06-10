@@ -104,7 +104,6 @@ class ReplayBuffer:
         else:
             raise NotImplementedError("Something is wrong")
     
-    @eqx.filter_jit
     def transform2batch(self, data: jnp.array, expected_dim: int):
         assert (
             len(data.shape) == expected_dim
