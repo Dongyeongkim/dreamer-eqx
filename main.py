@@ -1,9 +1,9 @@
 import os
 import jax
+import tqdm
 import hydra
 import dreamerv3
 import ml_collections
-import equinox as eqx
 import jax.numpy as jnp
 import jax.random as random
 from craftax.craftax_env import make_craftax_env_from_name
@@ -70,6 +70,8 @@ def craftax_rollout_fn(env, agent, states, rollout_num):
             "reward": reward,
         }, {
             "observation": carry["observation"],
+            "deter": policy_state[0][0]["deter"],
+            "stoch": policy_state[0][0]["stoch"],
             "action": outs["action"],
             "reward": reward,
             "is_first": carry["is_first"],
@@ -97,7 +99,8 @@ def main(cfg):
     first_obs, env_state = env.reset(reset_key, env_params)
     print(f"Setting the environments is now done...")
     print("Building the agent...")
-    dreamer = make_dreamer(env, config, key)
+    key, dreamer_key = jax.random.split(key)
+    dreamer = make_dreamer(env, config, dreamer_key)
     dreamer_state = dreamer.policy_initial(config["env"]["num_envs"])
     print("Building the agent is now done...")
     states = {
@@ -116,6 +119,8 @@ def main(cfg):
         buffer_size=5_000_000,
         key_and_desired_dim={
             "observation": 4,
+            "deter": 2,
+            "stoch": 3,
             "action": 2,
             "reward": 1,
             "is_first": 1,
@@ -123,7 +128,7 @@ def main(cfg):
             "is_terminal": 1,
         },
         batch_size=16,
-        chunk_size=1024,
+        chunk_size=config.num_steps,
     )
     import time
     a = time.time()
@@ -134,9 +139,11 @@ def main(cfg):
     print(outs.keys())
     rb.push(outs)
     print(rb.buffer.keys())
-    chunk = rb.sample(jax.random.key(0))
-    (lossval, metrics), grads = eqx.filter_value_and_grad(dreamer.loss, has_aux=True)(jax.random.key(0), dreamer.train_initial(16), chunk)
-    breakpoint()
+    total_losses = []
+    for _ in tqdm.tqdm(range(config.env.num_envs*config.num_steps//config.replay_ratio)):
+        key, sampling_key, training_key = jax.random.split(key, num=3)
+        chunk = rb.sample(sampling_key)
+        total_loss, _ = dreamer.train(training_key, dreamer.train_initial(config.batch_size), chunk)
 
 
 if __name__ == "__main__":

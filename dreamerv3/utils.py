@@ -124,10 +124,10 @@ class Optimizer(eqx.Module):
         return self.chain.init(eqx.filter(modules, eqx.is_array))
 
     @eqx.filter_jit
-    def update(self, key, opt_state, lossfn, modules, data, state):
+    def update(self, key, opt_state, lossfn, modules, carry, data):
         (total_loss, loss_and_info), grads = eqx.filter_value_and_grad(
             lossfn, has_aux=True
-        )(modules, key, data, state)
+        )(modules, key, carry, data)
         updates, opt_state = self.chain.update(grads, opt_state, modules)
         modules = eqx.apply_updates(modules, updates)
         return modules, opt_state, total_loss, loss_and_info

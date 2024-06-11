@@ -31,10 +31,11 @@ replay_critic_bootstrap: imag
 
 seed: 0
 gpu_id: 0
+lr: 4e-5
 batch_size: 16
-traj_length: 64
-num_epoch: 10
-num_steps: 1024
+traj_length: 65
+num_steps: 1040
+replay_ratio: 32
 agent:
   task_behavior: Greedy
   expl_behavior: None
