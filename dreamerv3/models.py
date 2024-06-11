@@ -64,7 +64,9 @@ class WorldModel(eqx.Module):
 
     def loss(self, key, carry, data):
         step_key, loss_key = random.split(key, num=2)
-        embeds = eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["observation"])
+        embeds = eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(
+            data["observation"]
+        )
         prev_latent, prev_action = carry
         prev_actions = jnp.concatenate(
             [prev_action[:, None, ...], data["action"][:, :-1, ...]], 1
@@ -86,24 +88,38 @@ class WorldModel(eqx.Module):
                 dist = head(feat)
                 if log_name == "cont":
                     if self.config.contdisc:
-                        softlabel = data["cont"] * (1 - 1 / self.config.discount_horizon)
-                        losses.update({log_name: -dist.log_prob(softlabel.astype("float32"))})
+                        softlabel = (1 - jnp.float32(data["is_terminal"])) * (
+                            1 - 1 / self.config.discount_horizon
+                        )
+                        losses.update(
+                            {log_name: -dist.log_prob(softlabel.astype("float32"))}
+                        )
                     else:
-                        losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
+                        losses.update(
+                            {
+                                log_name: -dist.log_prob(
+                                    data[data_name].astype("float32")
+                                )
+                            }
+                        )
                 else:
-                    losses.update({log_name: -dist.log_prob(data[data_name].astype("float32"))})
+                    losses.update(
+                        {log_name: -dist.log_prob(data[data_name].astype("float32"))}
+                    )
 
         return losses, (carry, outs, metrics)
 
     def imagine(self, key, policy, start, horizon):
-        first_cont = (1.0 - start["done"]).astype("float32")
-        keys = list(self.rssm.initial(1).keys())
-        start = {k: v for k, v in start.items() if k in keys}
+        first_cont = start["startcon"]
+        startlat = start["startlat"]
+        startout = start["startout"]
+        startrew = start["startrew"]
+
         wm_key, policy_key = random.split(key, num=2)
         policy_key, policy_start_key = random.split(policy_key, num=2)
-        start["key"] = wm_key
-        start["policy_key"] = policy_key
-        start["action"] = policy(policy_start_key, start)
+        startlat["key"] = wm_key
+        startlat["policy_key"] = policy_key
+        startlat["action"] = policy(policy_start_key, startout)
 
         def step(prev, _):
             prev = prev.copy()
@@ -117,19 +133,20 @@ class WorldModel(eqx.Module):
             }
 
         carry, traj = jax.lax.scan(
-            f=lambda *a, **kw: step(*a, **kw), init=start, xs=jnp.arange(horizon)
+            f=lambda *a, **kw: step(*a, **kw), init=startlat, xs=jnp.arange(horizon)
         )
-        _, _ = start.pop("key"), traj.pop("key")
-        _, _ = start.pop("policy_key"), traj.pop("policy_key")
+        _, _ = startlat.pop("key"), traj.pop("key")
+        _, _ = startlat.pop("policy_key"), traj.pop("policy_key")
 
         traj = {
-            k: jnp.concatenate([start[k][None], v], 0).swapaxes(1, 0)
+            k: jnp.concatenate([startlat[k][None], v], 0).swapaxes(1, 0)
             for k, v in traj.items()
         }
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
-        traj["cont"] = jnp.concatenate([first_cont, cont[:, 1:]], 1)
+        traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
         discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
         traj["weight"] = jnp.cumprod(discount * traj["cont"], 1) / discount
+        traj["startrew"] = startrew
         return traj
 
     @eqx.filter_jit
@@ -229,14 +246,15 @@ class ImagActorCritic(eqx.Module):
         return carry, {"action": self.actor(get_feat(latent))}
 
     def loss(self, key, imagine, start, update=True):
-        metrics = {}
+        metrics = {"test": "hello"}
         losses = {}
         policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
+
         traj = imagine(key, policy, start, self.config.agent.imag_horizon)
         traj = {k: sg(v) for k, v in traj.items()}
-        rew, ret, tarval, critic, slowcritic = self.critic.score(traj)
+        rew, ret, tarval, critic, slowcritic = self.critic["extr"].score(traj)
 
-        voffset, vscale = self.critic.valnorm(ret, update)
+        voffset, vscale = self.critic["extr"].valnorm(ret, update)
         roffset, rscale = self.retnorm(ret, update)
         adv = (ret - tarval[:, :-1]) / rscale
         aoffset, ascale = self.advnorm(adv, update)
@@ -244,7 +262,7 @@ class ImagActorCritic(eqx.Module):
 
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
-        losses["critic_loss"] = (
+        losses["critic"] = (
             traj["weight"][:, :-1]
             * -(
                 critic.log_prob(sg(ret_padded))
@@ -253,14 +271,20 @@ class ImagActorCritic(eqx.Module):
         )
 
         actor = self.actor(get_feat(traj))
+        logpi = actor.log_prob(sg(traj["action"]))[
+            :, :-1
+        ]  # this part has been changed; it is same as ninjax dreamerv3, but does not support multi actors
+        ents = actor.entropy()[
+            :, :-1
+        ]  # this part has been changed also for same reason
 
-        logpi = sum(
-            [v.log_prob(sg(traj["action"][k]))[:, :-1] for k, v in actor.items()]
-        )
-        ents = {k: v.entropy()[:, :-1] for k, v in actor.items()}
-        losses["actor_loss"] = traj["weight"][:, :-1] * -(
-            logpi * sg(adv_normed) + self.config.agent.actent * sum(ents.values())
-        )
+        losses["actor"] = traj["weight"][:, :-1] * -(
+            logpi * sg(adv_normed) + self.config.agent.actent * ents
+        )  # this part also has been changed; will be same btw
+
+        if self.config.replay_critic_loss:
+            losses["ret"] = ret
+
         return losses, metrics
 
     def _metrics(self, key, traj, policy, logpi, ent, adv):
@@ -285,13 +309,11 @@ class VFunction(eqx.Module):
         self.config = FrozenConfigDict(config)
 
     def score(self, traj, actor=None):
-        rew = self.rewfn(traj)
-        assert (
-            len(rew) == len(traj["action"]) - 1
-        ), "should provide rewards for all but last action"
+        rew = jnp.concatenate([traj["startrew"][:, None], self.rewfn(traj)], 1)
+        _ = traj.pop("startrew")
 
-        critic = self.net(traj)
-        slowcritic = self.slow(traj)
+        critic = self.net(get_feat(traj))
+        slowcritic = self.slow(get_feat(traj))
         voffset, vscale = self.valnorm.stats()
         val = critic.mean() * vscale + voffset
         slowval = slowcritic.mean() * vscale + voffset
@@ -306,3 +328,34 @@ class VFunction(eqx.Module):
             rets.append(interm[:, t] + disc[:, t] * lam * rets[-1])
         ret = jnp.stack(list(reversed(rets))[:-1], 1)
         return rew, ret, tarval, critic, slowcritic
+
+    def replay_critic_loss(self, traj, ret, update=True):
+        losses = {}
+        replay_critic = self.net(
+            get_feat(traj) if self.config.replay_critic_grad else sg(get_feat(traj))
+        )
+        replay_slowcritic = self.slow(get_feat(traj))
+
+        boot = dict(
+            imag=ret[:, 0].reshape(traj["reward"].shape),
+            critic=replay_critic.mean(),
+        )[self.config.replay_critic_bootstrap]
+        rets = [boot[:, -1]]
+        live = jnp.float32(~traj["is_terminal"])[:, 1:] * (1 - 1 / self.config.discount_horizon)
+        cont = jnp.float32(~traj["is_last"])[:, 1:] * self.config.agent.return_lambda_replay
+        interm = traj["reward"][:, 1:] + (1 - cont) * live * boot[:, 1:]
+        for t in reversed(range(live.shape[1])):
+            rets.append(interm[:, t] + live[:, t] * cont[:, t] * rets[-1])
+        replay_ret = jnp.stack(list(reversed(rets))[:-1], 1)
+        voffset, vscale = self.valnorm(replay_ret, update)
+        ret_normed = (replay_ret - voffset) / vscale
+        ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
+        losses["replay_critic"] = (
+            sg(jnp.float32(~traj["is_last"]))[:, :-1]
+            * -(
+                replay_critic.log_prob(sg(ret_padded))
+                + self.config.agent.slowreg
+                * replay_critic.log_prob(sg(replay_slowcritic.mean()))
+            )[:, :-1]
+        )
+        return losses

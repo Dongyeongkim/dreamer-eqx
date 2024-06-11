@@ -3,6 +3,7 @@ import jax
 import hydra
 import dreamerv3
 import ml_collections
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as random
 from craftax.craftax_env import make_craftax_env_from_name
@@ -72,7 +73,8 @@ def craftax_rollout_fn(env, agent, states, rollout_num):
             "action": outs["action"],
             "reward": reward,
             "is_first": carry["is_first"],
-            "is_terminal": done,
+            "is_last": done,
+            "is_terminal": jnp.equal(info["discount"], 0)
         }
 
     carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
@@ -117,6 +119,7 @@ def main(cfg):
             "action": 2,
             "reward": 1,
             "is_first": 1,
+            "is_last": 1,
             "is_terminal": 1,
         },
         batch_size=16,
@@ -127,13 +130,13 @@ def main(cfg):
     states, outs = craftax_rollout_fn(
         env, dreamer, states, rollout_num=config.num_steps
     )
-    print(f"fps: {1024/(time.time()-a)}")
+    print(f"fps: {config.num_steps * config.env.num_envs /(time.time()-a)}")
     print(outs.keys())
     rb.push(outs)
     print(rb.buffer.keys())
     chunk = rb.sample(jax.random.key(0))
-    #losses = dreamer.loss(jax.random.key(0), dreamer.train_initial(16), chunk)
-    #print(losses)
+    (lossval, metrics), grads = eqx.filter_value_and_grad(dreamer.loss, has_aux=True)(jax.random.key(0), dreamer.train_initial(16), chunk)
+    breakpoint()
 
 
 if __name__ == "__main__":

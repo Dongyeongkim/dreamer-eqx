@@ -1,10 +1,12 @@
+import jax
 from . import behaviors
 from jax import random
-from jax import tree_map
 import jax.numpy as jnp
-from .utils import Optimizer, SlowUpdater
+from jax.tree_util import tree_map
+from .utils import Optimizer, SlowUpdater, get_feat
 from .models import WorldModel
 
+sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
 class DreamerV3:
     def __init__(self, key, obs_space, act_space, step=0, config=None):
@@ -73,11 +75,46 @@ class DreamerV3:
         wm_loss_key, ac_loss_key = random.split(key, num=2)
 
     def loss(self, key, carry, data):
+        losses = {}
+        metrics = {}
         wm_loss_key, ac_loss_key = random.split(key, num=2)
         wm_losses, (wm_carry, wm_outs, wm_metrics) = self.modules["wm"].loss(
             wm_loss_key, carry, data
-        )
+        )  # using wm_carry is available at the mode of 'last' mode. it will be added after few weeks.
+        losses.update(wm_losses)
+        metrics.update(wm_metrics)
         rew = data["reward"]
         con = 1 - jnp.float32(data["is_terminal"])
         B, T = data["is_first"].shape
-        return wm_losses
+        startlat = self.modules["wm"].rssm.outs_to_carry(
+            tree_map(lambda x: x.reshape((B * T, 1, *x.shape[2:])), wm_outs)
+        )
+        startout, startrew, startcon = tree_map(
+            lambda x: x.reshape((B * T, *x.shape[2:])), (wm_outs, rew, con)
+        )
+        startlat, startout, startrew, startcon = tree_map(
+            lambda x: x.repeat(1, 0), (startlat, startout, startrew, startcon)
+        )
+        start = {
+            "startlat": startlat,
+            "startout": startout,
+            "startrew": startrew,
+            "startcon": startcon,
+        }
+        ac_losses, ac_metrics = self.modules["ac"].loss(
+            ac_loss_key, self.modules["wm"].imagine, start
+        )
+        losses.update(ac_losses)
+        metrics.update(ac_metrics)
+
+        if self.config.replay_critic_loss:
+            ret = losses.pop("ret")
+            data_with_wm_outs = {**data, **wm_outs}
+            replay_critic_loss = self.modules["ac"].ac.critic["extr"].replay_critic_loss(data_with_wm_outs, ret)
+            losses.update(replay_critic_loss)
+        
+        scaled_losses = {k: v * self.scales[k] for k, v in losses.items()}
+        loss = jnp.stack([v.mean() for v in scaled_losses.values()]).sum()
+        breakpoint()
+        
+        return loss, (scaled_losses, metrics)

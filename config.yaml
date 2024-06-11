@@ -23,6 +23,12 @@ loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0
   critic: 1.0, replay_critic: 0.3}
 slow_critic_update: 1
 slow_critic_fraction: 0.02
+
+replay_critic_loss: True
+replay_critic_grad: True
+replay_critic_bootstrap: imag
+
+
 seed: 0
 gpu_id: 0
 batch_size: 16
@@ -48,6 +54,7 @@ agent:
   imag_horizon: 15
   horizon: 333
   return_lambda: 0.95
+  return_lambda_replay: 0.95
 env:
   env_name: Craftax-Classic-Pixels-v1
   autoreset: true

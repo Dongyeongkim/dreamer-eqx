@@ -12,7 +12,7 @@ from .utils import traj_reset, tensorstats
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
-sg = lambda x: jax.tree_map(jax.lax.stop_gradient, x)
+sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
 
 class RSSM(eqx.Module):
@@ -254,7 +254,7 @@ class RSSM(eqx.Module):
         return cast_to_compute(carry, self.cdtype)
     
     def outs_to_carry(self, outs):
-        keys = ('deter', 'stoch')
+        keys = ("deter", "stoch")
         return {k: outs[k][:, -1] for k in keys}
 
     def observe(self, key, carry, actions, embeds, resets, tdim=1):
