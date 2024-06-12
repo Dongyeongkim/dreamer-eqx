@@ -1,20 +1,20 @@
 
-encoder: {channel_depth: 16, channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms,
+encoder: {channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms,
   winit: normal, outer: true, kernel_size: 5, stride: 2, minres: 6, cdtype: bfloat16}
 
-rssm: {deter: 2048, hidden: 256, latent_dim: 32, latent_cls: 16, channel_depth: 16,
+rssm: {deter: 4096, hidden: 512, latent_dim: 32, latent_cls: 32, channel_depth: 32,
   channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms, unimix: 0.01, outscale: 1.0,
   winit: normal, num_imglayer: 2, num_obslayer: 1, num_dynlayer: 1, blocks: 8, block_fans: false,
   block_norm: false, cdtype: bfloat16}
 
-decoder: {deter: 2048, channel_depth: 16, channel_mults: [1, 2, 3, 4, 4], latent_dim: 32,
-  latent_cls: 16, num_units: 256, act: silu, norm: rms, winit: normal, outer: true, kernel_size: 5,
+decoder: {deter: 4096, channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], latent_dim: 32,
+  latent_cls: 32, num_units: 512, act: silu, norm: rms, winit: normal, outer: true, kernel_size: 5,
   stride: 2, minres: 6, use_sigmoid: true, cdtype: bfloat16}
 
-reward_head: {num_layers: 1, in_features: 2560, num_units: 256, act: silu, norm: rms, dist: symexp_twohot,
+reward_head: {num_layers: 1, in_features: 5120, num_units: 512, act: silu, norm: rms, dist: symexp_twohot,
   outscale: 0.0, winit: normal, cdtype: bfloat16}
 
-cont_head: {num_layers: 1, in_features: 2560, num_units: 256, act: silu, norm: rms, dist: binary, outscale: 1.0, 
+cont_head: {num_layers: 1, in_features: 5120, num_units: 512, act: silu, norm: rms, dist: binary, outscale: 1.0, 
   winit: normal, cdtype: bfloat16}
 
 contdisc: true
@@ -40,10 +40,10 @@ agent:
   task_behavior: Greedy
   expl_behavior: None
   critic_type: vfunction
-  actor: {num_layers: 3, num_units: 256, act: silu, norm: rms, dist: onehot, minstd: 0.1,
-    maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: normal, in_features: 2560}
-  critic: {num_layers: 3, num_units: 256, act: silu, norm: rms, dist: symexp_twohot,
-    outscale: 0.0, winit: normal, bins: 255, in_features: 2560}
+  actor: {num_layers: 3, num_units: 512, act: silu, norm: rms, dist: onehot, minstd: 0.1,
+    maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: normal, in_features: 5120}
+  critic: {num_layers: 3, num_units: 512, act: silu, norm: rms, dist: symexp_twohot,
+    outscale: 0.0, winit: normal, bins: 255, in_features: 5120}
   actor_dist_disc: onehot
   actor_dist_cont: normal
   actent: 3e-4

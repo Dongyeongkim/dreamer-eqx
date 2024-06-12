@@ -49,38 +49,46 @@ def make_dreamer(env, config, key):
     return dreamer
 
 
-def craftax_rollout_fn(env, agent, states, rollout_num):
-    def step_fn(carry, _):
-        key, policy_key, step_key = random.split(carry["key"], num=3)
-        policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
-        obs, env_state, reward, done, info = env.step(
-            step_key,
-            carry["env_state"],
-            outs["action"].argmax(axis=1),
-            env.default_params,
-        )
-        return {
-            "key": key,
-            "env_state": env_state,
-            "policy_state": policy_state,
-            "observation": jax.image.resize(
-                obs, (obs.shape[0], 64, 64, obs.shape[3]), method="nearest"
-            ),
-            "is_first": done,
-            "reward": reward,
-        }, {
-            "observation": carry["observation"],
-            "deter": policy_state[0][0]["deter"],
-            "stoch": policy_state[0][0]["stoch"],
-            "action": outs["action"],
-            "reward": reward,
-            "is_first": carry["is_first"],
-            "is_last": done,
-            "is_terminal": jnp.equal(info["discount"], 0)
-        }
+def train_step_fn(carry, num_interaction_steps):
+    if num_interaction_steps % carry["train_every"] == 0:
+        buffer_state = carry["buffer_state"]
+        return carry, None
+    else:
+        return carry, None
 
-    carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
-    return carry, outs
+
+# def craftax_rollout_fn(env, agent, states, rollout_num):
+#     def step_fn(carry, _):
+#         key, policy_key, step_key = random.split(carry["key"], num=3)
+#         policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
+#         obs, env_state, reward, done, info = env.step(
+#             step_key,
+#             carry["env_state"],
+#             outs["action"].argmax(axis=1),
+#             env.default_params,
+#         )
+#         return {
+#             "key": key,
+#             "env_state": env_state,
+#             "policy_state": policy_state,
+#             "observation": jax.image.resize(
+#                 obs, (obs.shape[0], 64, 64, obs.shape[3]), method="nearest"
+#             ),
+#             "is_first": done,
+#             "reward": reward,
+#         }, {
+#             "observation": carry["observation"],
+#             "deter": policy_state[0][0]["deter"],
+#             "stoch": policy_state[0][0]["stoch"],
+#             "action": outs["action"],
+#             "reward": reward,
+#             "is_first": carry["is_first"],
+#             "is_last": done,
+#             "is_terminal": jnp.equal(info["discount"], 0)
+#         }
+
+#     carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
+#     return carry, outs
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
@@ -144,6 +152,10 @@ def main(cfg):
         key, sampling_key, training_key = jax.random.split(key, num=3)
         chunk = rb.sample(sampling_key)
         total_loss, _ = dreamer.train(training_key, dreamer.train_initial(config.batch_size), chunk)
+        total_losses.append(total_loss)
+    import matplotlib.pyplot as plt
+    plt.plot(total_losses)
+    plt.savefig("loss.png")
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ class DreamerV3:
             outs["action"] = outs["action"].sample(seed=act_key)
             state = ((latent, outs["action"]), task_state, expl_state)
         return state, outs
-
+    
     def train(self, key, carry, data):
         context_data = data.copy()
         context = {
