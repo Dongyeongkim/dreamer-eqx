@@ -14,6 +14,8 @@ class ReplayBuffer:
     buffer: dict
     chunk_id: int
     deskeydim: dict
+    batch_size: int
+    chunk_size: int
     buffer_size: int
     input_pytreedef: chex.PyTreeDef
     batch_size_dict: dict
@@ -23,77 +25,56 @@ class ReplayBuffer:
 def generate_replaybuffer(buffer_size, desired_key_dim, batch_size, chunk_size, num_env=1):
     assert num_env > 0, "number of the environments should be greater or equal than 1(replay buffer)"
     if num_env == 1:
-        desired_key_and_dim = {k: jnp.zeros(shape=v) for k,v in desired_key_dim.items()}
+        desired_key_and_dim = {k: len(v) for k,v in desired_key_dim.items()}
     else:
-        desired_key_and_dim = {k: jnp.zeros(shape=((num_env,)+v)) for k,v in desired_key_dim.items()}
+        desired_key_and_dim = {k: len((num_env,)+v) for k,v in desired_key_dim.items()}
     return ReplayBuffer(
         left=[],
         buffer={},
         chunk_id=0,
-        deskeydim={k: len(v.shape) for k,v in desired_key_and_dim.items()},
+        deskeydim=desired_key_and_dim,
+        batch_size=batch_size,
+        chunk_size=chunk_size,
         buffer_size=buffer_size,
         input_pytreedef=tree_structure(desired_key_and_dim),
         batch_size_dict={k: batch_size for k in desired_key_and_dim.keys()},
         chunk_size_dict={k: chunk_size for k in desired_key_and_dim.keys()},
     )
 
-#@eqx.filter_jit
+# No JIT; JItting will make the performance poor. The reason is it needs to optimise its shape of left while dynamically changed it
+
+
 def pushstep(buffer_state, data: Dict[str, jnp.array]):
     data = tree_map(transform2ds, data, buffer_state.deskeydim)
     vals = tree_leaves(data)
-    buffer_state.replace(
-        left=buffer_state.left.append(vals)
-    )
+    buffer_state.left = [*buffer_state.left, vals]
     return buffer_state
 
-@eqx.filter_jit
+
 def defragmenter(buffer_state):
-    restored = [tree_unflatten(buffer_state.input_pytreedef, data) for data in buffer_state.left]
-    breakpoint()
-    prechunk = tree_map(getleft, buffer_state.left)
-    chunks_and_infos = tree_map(optimisedgetchunk, prechunk)
-    chunk_cond = {k: v[0] for k, v in chunks_and_infos.items()}
-    leftchunk_cond = [v[1] for v in chunks_and_infos.values()]
-    numchunks = [v[2] for v in chunks_and_infos.values()]
-    chunks = {k: v[3] for k, v in chunks_and_infos.items()}
-    if True in chunk_cond.values():
-        buffer_state.left = {k: optimisedgetleft(v) for k, v in chunks.items()}
+    splitpoint = (len(buffer_state.left) // buffer_state.chunk_size) * buffer_state.chunk_size
+    restored = [tree_unflatten(buffer_state.input_pytreedef, data) for data in buffer_state.left[:splitpoint]]
+    numchunks = len(restored) // buffer_state.chunk_size
+    if numchunks == 0:
         return buffer_state
-
-    else:
-        if leftchunk_cond[0]:
-            for i in range(numchunks[0]):
-                idx = buffer_state.chunk_id % (
-                    buffer_state.buffer_size // buffer_state.chunk_size
-                )
-                buffer_state.buffer.update({idx: {k: v[i] for k, v in chunks.items()}})
-                buffer_state.chunk_id += 1
-
-            buffer_state.left = {k: optimisedgetleft(v) for k, v in chunks.items()}
-            return buffer_state
-
-        else:
-            for i in range(numchunks[0]):
-                idx = buffer_state.chunk_id % (
-                    buffer_state.buffer_size // buffer_state.chunk_size
-                )
-                buffer_state.buffer.update({idx: {k: v[i] for k, v in chunks.items()}})
-                buffer_state.chunk_id += 1
-
-            buffer_state.left = {k: jnp.array([]) for k in chunks.keys()}
-            return buffer_state
+    prechunk = tree_stack(restored)
+    
+    chunks = tree_map(optimisedgetchunk, prechunk, buffer_state.chunk_size_dict)
+    for i in range(numchunks):
+        idx = buffer_state.chunk_id % (buffer_state.buffer_size // buffer_state.chunk_size)
+        buffer_state.buffer.update({idx: {k: v[i] for k, v in chunks.items()}})
+        buffer_state.chunk_id += 1
+    
+    buffer_state.left = buffer_state.left[splitpoint:]
+    return buffer_state
 
 
 @eqx.filter_jit
 def sampler(key, buffer_state, device=None):
     if buffer_state.chunk_id > buffer_state.buffer_size // buffer_state.chunk_size:
-        idx = int(
-            jax.random.choice(
-                key, jnp.arange(buffer_state.buffer_size // buffer_state.chunk_size)
-            )
-        )
+        idx = jax.random.choice(key, jnp.arange(buffer_state.buffer_size // buffer_state.chunk_size))
     else:
-        idx = int(jax.random.choice(key, jnp.arange(buffer_state.chunk_id)))
+        idx = jax.random.choice(key, jnp.arange(buffer_state.chunk_id))
     data = tree_map(
         transform2batch,
         buffer_state.buffer[idx],
@@ -112,28 +93,15 @@ def sampler(key, buffer_state, device=None):
     return buffer_state, data
 
 
-def pusharray(data, leftover):
-    if len(leftover) == 0:
-        return jax.device_put(data, device=jax.devices("cpu")[0])
-    else:
-        return jax.lax.concatenate(
-            [leftover, jax.device_put(data, device=jax.devices("cpu")[0])], 0
-        )
-
-def restoretree(tree, data):
-    return tree_unflatten(tree, data)
+def tree_stack(trees):
+    return jax.device_put(tree_map(lambda *v: jnp.stack(v), *trees), device=jax.devices("cpu")[0])
 
 def poparray(data, device):
     return jax.device_put(data, device)
 
 
 def optimisedgetchunk(data, chunk_size: int):
-    return (
-        ((len(data) % chunk_size) == len(data)),
-        (len(data) % chunk_size),
-        (len(data) // chunk_size),
-        jnp.array_split(data, jnp.arange(chunk_size, len(data), chunk_size)),
-    )
+    return jnp.array_split(data, jnp.arange(chunk_size, len(data), chunk_size))
 
 
 def optimisedgetleft(data):
@@ -168,10 +136,21 @@ def transform2batch(
     )
 
 
+@eqx.filter_jit
+def testfunc(buffer_ds):
+    for i in range(1000):
+        for _ in range(2):
+            buffer_ds = pushstep(buffer_ds, {"obs": jnp.zeros((16, 64, 64, 3)), "action": jnp.zeros((16, 6))})
+        if i % 520:
+            buffer_ds = defragmenter(buffer_ds)
+    return buffer_ds
+    
+
 if __name__ == "__main__":
-    buffer_ds = generate_replaybuffer(buffer_size=1_000_000, desired_key_dim={"obs": (64, 64, 3), "action": (6,)}, batch_size=16, chunk_size=64, num_env=16)
-    for i in range(2000):
-        buffer_ds = pushstep(buffer_ds, {"obs": jnp.zeros((16, 64, 64, 3)), "action": jnp.zeros((16, 6))})
-    
-    defragmenter(buffer_ds)
-    
+    buffer_ds = generate_replaybuffer(buffer_size=1_000_000, desired_key_dim={"obs": (64, 64, 3), "action": (6,)}, batch_size=16, chunk_size=1040, num_env=16)
+    import time
+    a = time.time()
+    buffer_ds = testfunc(buffer_ds)
+    b = time.time()
+    print(b-a)
+    buffer_ds, data = sampler(jax.random.key(0), buffer_ds)
