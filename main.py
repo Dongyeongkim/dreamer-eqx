@@ -7,8 +7,8 @@ import ml_collections
 import jax.numpy as jnp
 import jax.random as random
 from craftax.craftax_env import make_craftax_env_from_name
-from craftax_wrapper import BatchEnvWrapper, OptimisticResetVecEnvWrapper
-from dreamerv3.replay import ReplayBuffer
+from craftax_wrapper import BatchEnvWrapper, OptimisticResetVecEnvWrapper, CraftaxWrapper
+from dreamerv3.replay import pushstep
 
 
 def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
@@ -29,7 +29,7 @@ def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
 
 
 def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1):
-    assert num_envs > 1, "number of the environments must be bigger than 1"
+    assert num_envs > 0, "number of the environments must be greater or equal than 1"
     env = make_craftax_env_from_name(env_name, not autoreset)
     if num_envs > 1:
         if autoreset:
@@ -38,6 +38,8 @@ def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1):
             )  # fixed value; from the craftax paper
         else:
             env = BatchEnvWrapper(env)
+    
+    env = CraftaxWrapper(env)
 
     return env
 
@@ -55,6 +57,32 @@ def train_step_fn(carry, num_interaction_steps):
         return carry, None
     else:
         return carry, None
+
+
+# rollout_fn
+#   - interaction: agent, agent_modules(params), env, env_state, replaybuffer_state, other configs -> env_state, replaybuffer_state
+#   - model training: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah) 
+
+def interaction_fn(key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state):
+    key, policy_key, env_key = random.split(key)
+    env_state, timestep = env_fn.step(env_key, env_state, agent_state[0][1].argmax(axis=1), env_params)
+    timestep["action"] = agent_state[0][1]
+    agent_state, outs = agent_fn.policy(policy_key, agent_modules, agent_state, timestep)
+    
+    rb_state = pushstep(rb_state, timestep)
+    return agent_state, env_state, rb_state
+
+# 1. interaction (env.step -> rb pushing -> send state over carry...)
+# 2. worldmodel + actor-critic learning ( rb sampling -> training)
+# 3. report?
+
+
+def rollout_fn(agent, env, ):
+    pass
+
+
+def inference_fn(agent, env, agent_modules, replaybuffer, **kwargs):
+    pass
 
 
 # def craftax_rollout_fn(env, agent, states, rollout_num):

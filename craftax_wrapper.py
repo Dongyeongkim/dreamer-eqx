@@ -148,8 +148,8 @@ class CraftaxWrapper(GymnaxWrapper):
     def __init__(self, env):
         super().__init__(env)
 
-    def reset(self, rng):
-        obs, env_state = self._env.reset(rng)
+    def reset(self, rng, params=None):
+        obs, env_state = self._env.reset(rng, params)
         return env_state, {
             "observation": obs,
             "reward": jnp.zeros((self.num_envs,)),
@@ -158,8 +158,8 @@ class CraftaxWrapper(GymnaxWrapper):
             "is_terminal": jnp.zeros((self.num_envs,)),
         }
 
-    def step(self, rng, env_state, action):
-        obs, env_state, reward, done, info = self._env.step(rng, env_state, action)
+    def step(self, rng, env_state, action, params=None):
+        obs, env_state, reward, done, info = self._env.step(rng, env_state, action, params)
         return env_state, {
             "observation": obs,
             "reward": reward,
