@@ -51,21 +51,21 @@ class Optimizer(eqx.Module):
     chain: optax.chain
 
     def __init__(
-            self,
-            lr,
-            scaler="adam",
-            eps=1e-7,
-            beta1=0.9,
-            beta2=0.999,
-            warmup=1000,
-            anneal=0,
-            wd=0.0,
-            wd_pattern=r"/weight$",
-            pmin=1e-3,
-            globclip=0.0,
-            agc=0.0,
-            momentum=False,
-            nesterov=False,
+        self,
+        lr,
+        scaler="adam",
+        eps=1e-7,
+        beta1=0.9,
+        beta2=0.999,
+        warmup=1000,
+        anneal=0,
+        wd=0.0,
+        wd_pattern=r"/weight$",
+        pmin=1e-3,
+        globclip=0.0,
+        agc=0.0,
+        momentum=False,
+        nesterov=False,
     ):
         self.lr = lr
         self.scaler = scaler
@@ -150,7 +150,7 @@ def save_states(checkpointer, ckpt_path, key_state, opt_state, model):
 
 
 def restore_states(
-        checkpointer, ckpt_path, dummy_key_state, dummy_opt_state, dummy_model
+    checkpointer, ckpt_path, dummy_key_state, dummy_opt_state, dummy_model
 ):
     dummy_params, dummy_static = eqx.partition(dummy_model, eqx.is_array)
     restored = checkpointer.restore(
@@ -431,7 +431,7 @@ class MSEDist:
         self._dims = tuple([-x for x in range(1, dims + 1)])
         self._agg = agg
         self.batch_shape = mode.shape[: len(mode.shape) - dims]
-        self.event_shape = mode.shape[len(mode.shape) - dims:]
+        self.event_shape = mode.shape[len(mode.shape) - dims :]
 
     def mode(self):
         return self._mode
@@ -458,7 +458,7 @@ class HuberDist:
         self._dims = tuple([-x for x in range(1, dims + 1)])
         self._agg = agg
         self.batch_shape = mode.shape[: len(mode.shape) - dims]
-        self.event_shape = mode.shape[len(mode.shape) - dims:]
+        self.event_shape = mode.shape[len(mode.shape) - dims :]
 
     def mode(self):
         return self._mode
@@ -489,7 +489,7 @@ class TransformedMseDist:
         self._agg = agg
         self._tol = tol
         self.batch_shape = mode.shape[: len(mode.shape) - dims]
-        self.event_shape = mode.shape[len(mode.shape) - dims:]
+        self.event_shape = mode.shape[len(mode.shape) - dims :]
 
     def mode(self):
         return self._bwd(self._mode)
@@ -523,7 +523,7 @@ class TwoHotDist:
         self.transfwd = transfwd or (lambda x: x)
         self.transbwd = transbwd or (lambda x: x)
         self.batch_shape = logits.shape[: len(logits.shape) - dims - 1]
-        self.event_shape = logits.shape[len(logits.shape) - dims: -1]
+        self.event_shape = logits.shape[len(logits.shape) - dims : -1]
 
     def mean(self):
         # The naive implementation results in a non-zero result even if the bins
@@ -536,18 +536,18 @@ class TwoHotDist:
         if n % 2 == 1:
             m = (n - 1) // 2
             p1 = self.probs[..., :m]
-            p2 = self.probs[..., m: m + 1]
-            p3 = self.probs[..., m + 1:]
+            p2 = self.probs[..., m : m + 1]
+            p3 = self.probs[..., m + 1 :]
             b1 = self.bins[..., :m]
-            b2 = self.bins[..., m: m + 1]
-            b3 = self.bins[..., m + 1:]
+            b2 = self.bins[..., m : m + 1]
+            b3 = self.bins[..., m + 1 :]
             wavg = (p2 * b2).sum(-1) + ((p1 * b1)[..., ::-1] + (p3 * b3)).sum(-1)
             return self.transbwd(wavg)
         else:
             p1 = self.probs[..., : n // 2]
-            p2 = self.probs[..., n // 2:]
+            p2 = self.probs[..., n // 2 :]
             b1 = self.bins[..., : n // 2]
-            b2 = self.bins[..., n // 2:]
+            b2 = self.bins[..., n // 2 :]
             wavg = ((p1 * b1)[..., ::-1] + (p2 * b2)).sum(-1)
             return self.transbwd(wavg)
 
@@ -568,8 +568,8 @@ class TwoHotDist:
         weight_below = dist_to_above / total
         weight_above = dist_to_below / total
         target = (
-                jax.nn.one_hot(below, len(self.bins)) * weight_below[..., None]
-                + jax.nn.one_hot(above, len(self.bins)) * weight_above[..., None]
+            jax.nn.one_hot(below, len(self.bins)) * weight_below[..., None]
+            + jax.nn.one_hot(above, len(self.bins)) * weight_above[..., None]
         )
         log_pred = self.logits - jax.scipy.special.logsumexp(
             self.logits, -1, keepdims=True
@@ -689,7 +689,7 @@ class Moments(eqx.Module):
         elif self.impl == "mean_std":
             corr = jnp.maximum(self.rate, self.corr)
             mean = self.mean / corr
-            std = jnp.sqrt(jax.nn.relu(self.sqrs / corr - mean ** 2))
+            std = jnp.sqrt(jax.nn.relu(self.sqrs / corr - mean**2))
             std = jnp.maximum(self.limit, std)
             return sg(mean), sg(std)
         elif self.impl == "min_max":

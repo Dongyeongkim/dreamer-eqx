@@ -341,8 +341,13 @@ class VFunction(eqx.Module):
             critic=replay_critic.mean(),
         )[self.config.replay_critic_bootstrap]
         rets = [boot[:, -1]]
-        live = jnp.float32(~traj["is_terminal"])[:, 1:] * (1 - 1 / self.config.discount_horizon)
-        cont = jnp.float32(~traj["is_last"])[:, 1:] * self.config.agent.return_lambda_replay
+        live = jnp.float32(~traj["is_terminal"])[:, 1:] * (
+            1 - 1 / self.config.discount_horizon
+        )
+        cont = (
+            jnp.float32(~traj["is_last"])[:, 1:]
+            * self.config.agent.return_lambda_replay
+        )
         interm = traj["reward"][:, 1:] + (1 - cont) * live * boot[:, 1:]
         for t in reversed(range(live.shape[1])):
             rets.append(interm[:, t] + live[:, t] * cont[:, t] * rets[-1])

@@ -252,7 +252,7 @@ class RSSM(eqx.Module):
             stoch=jnp.zeros([bsize, self.latent_dim, self.latent_cls], self.pdtype),
         )
         return cast_to_compute(carry, self.cdtype)
-    
+
     def outs_to_carry(self, outs):
         keys = ("deter", "stoch")
         return {k: outs[k][:, -1] for k in keys}
@@ -520,9 +520,8 @@ class ImageDecoder(eqx.Module):
         pdtype="float32",
         cdtype="float32",
     ):
-        channels = (
-            (3 if use_rgb else 1,)
-            + tuple([channel_depth * mult for mult in channel_mults])
+        channels = (3 if use_rgb else 1,) + tuple(
+            [channel_depth * mult for mult in channel_mults]
         )
 
         key, param_key = random.split(key, num=2)

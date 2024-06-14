@@ -5,11 +5,13 @@ from .utils import OneHotDist, get_feat
 from ml_collections import FrozenConfigDict
 from .models import ImagActorCritic, VFunction
 from tensorflow_probability.substrates import jax as tfp
+
 tfd = tfp.distributions
 
 
 class Greedy(eqx.Module):
     ac: eqx.Module
+
     def __init__(self, key, wm, act_space, config):
         rewfn = lambda s: wm.heads["reward"](get_feat(s)).mean()[:, 1:]
         criticKey, acKey = random.split(key)
@@ -35,6 +37,7 @@ class Greedy(eqx.Module):
 class Random(eqx.Module):
     act_space: any
     config: FrozenConfigDict
+
     def __init__(self, key, wm, act_space, config):
         self.config = config
         self.act_space = act_space

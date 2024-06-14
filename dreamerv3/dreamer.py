@@ -33,31 +33,35 @@ class DreamerV3:
             fraction=self.config.slow_critic_fraction,
             period=self.config.slow_critic_fraction,
         )
-        self.modules = {"wm": self.wm, "task_behavior": self.task_behavior, "expl_behavior": self.expl_behavior}
+        self.modules = {
+            "wm": self.wm,
+            "task_behavior": self.task_behavior,
+            "expl_behavior": self.expl_behavior,
+        }
         self.opt = Optimizer(lr=self.config.lr)
         self.opt_state = self.opt.init(self.modules)
 
     def policy_initial(self, batch_size):
         return (
-            self.modules['wm'].initial(batch_size),
-            self.modules['task_behavior'].initial(batch_size),
-            self.modules['expl_behavior'].initial(batch_size),
+            self.modules["wm"].initial(batch_size),
+            self.modules["task_behavior"].initial(batch_size),
+            self.modules["expl_behavior"].initial(batch_size),
         )
 
     def train_initial(self, batch_size):
-        return self.modules['wm'].initial(batch_size)
+        return self.modules["wm"].initial(batch_size)
 
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
-        embed = modules['wm'].encoder(obs["observation"])
+        embed = modules["wm"].encoder(obs["observation"])
         (prev_latent, prev_action), task_state, expl_state = state
         prev_latent["key"] = obs_key
-        _, latent = modules['wm'].rssm.obs_step(
+        _, latent = modules["wm"].rssm.obs_step(
             prev_latent, (prev_action, embed, obs["is_first"])
         )
         _, _ = latent.pop("post"), latent.pop("prior")
-        task_state, task_outs = modules['task_behavior'].policy(task_state, latent)
-        expl_state, expl_outs = modules['expl_behavior'].policy(expl_state, latent)
+        task_state, task_outs = modules["task_behavior"].policy(task_state, latent)
+        expl_state, expl_outs = modules["expl_behavior"].policy(expl_state, latent)
 
         if mode == "eval":
             outs = task_outs
@@ -79,9 +83,9 @@ class DreamerV3:
     def train(self, modules, key, carry, data, opt, opt_state):
         context_data = data.copy()
         context = {
-            k: context_data.pop(k)[:, :1] for k in modules['wm'].rssm.initial(1).keys()
+            k: context_data.pop(k)[:, :1] for k in modules["wm"].rssm.initial(1).keys()
         }
-        prevlat = modules['wm'].rssm.outs_to_carry(context)
+        prevlat = modules["wm"].rssm.outs_to_carry(context)
         prevact = data["action"][:, 0]
         carry = prevlat, prevact
         data = {k: v[:, 1:] for k, v in data.items()}
