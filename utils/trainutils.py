@@ -28,10 +28,10 @@ def rollout_fn(
             rb_state = defragmenter(rb_state)
 
         if idx % replay_ratio == 0 and idx != 0:
-            carry = train_agent_fn(agent_fn, env_fn, opt_fn, **carry)
+            carry = train_agent_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
             return carry, _
         else:
-            carry = interaction_fn(agent_fn, env_fn, opt_fn, **carry)
+            carry = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
             return carry, _
 
     init_carry = {
@@ -64,6 +64,8 @@ def interaction_fn(
     env_state, timestep = env_fn.step(
         env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
     )
+    timestep["deter"] = agent_state[0][0]["deter"]
+    timestep["stoch"] = agent_state[0][0]["stoch"]
     timestep["action"] = agent_state[0][1]
     agent_state, outs = agent_fn.policy(
         policy_key, agent_modules, agent_state, timestep
@@ -111,8 +113,31 @@ def train_agent_fn(
 #   - interaction_fn: only interactions to fill replay buffer
 
 def prefill_fn(
-        key, 
-        prefill_steps,
-
+    key,
+    num_steps,
+    agent_fn,
+    env_fn,
+    opt_fn,
+    agent_modules,
+    agent_state,
+    env_params,
+    env_state,
+    opt_state,
+    rb_state,
 ):
-    pass
+    def step_fn(carry, _):
+        carry = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
+        return carry, _
+
+    init_carry = {
+        "key": key,
+        "agent_modules": agent_modules,
+        "agent_state": agent_state,
+        "opt_state": opt_state,
+        "env_state": env_state,
+        "rb_state": rb_state,
+    }
+
+    carry, _ = jax.lax.scan(step_fn, init_carry, jnp.arange(num_steps), unroll=False)
+
+    return carry["rb_state"]

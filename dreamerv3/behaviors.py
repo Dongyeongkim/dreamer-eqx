@@ -1,9 +1,8 @@
 import equinox as eqx
-import jax.numpy as jnp
 from jax import random
-from .dreamerutils import OneHotDist, get_feat
-from ml_collections import FrozenConfigDict
+import jax.numpy as jnp
 from .models import ImagActorCritic, VFunction
+from .dreamerutils import OneHotDist, get_feat
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
@@ -36,10 +35,8 @@ class Greedy(eqx.Module):
 
 class Random(eqx.Module):
     act_space: any
-    config: FrozenConfigDict
 
-    def __init__(self, key, wm, act_space, config):
-        self.config = config
+    def __init__(self, key, wm, act_space):
         self.act_space = act_space
 
     def initial(self, batch_size):
@@ -53,7 +50,7 @@ class Random(eqx.Module):
         else:
             dist = tfd.Uniform(-jnp.ones(shape), jnp.ones(shape))
             dist = tfd.Independent(dist, 1)
-        return {"action": dist}, state
+        return state, {"action": dist}
 
     def report(self, data):
         return {}

@@ -32,9 +32,9 @@ replay_critic_bootstrap: imag
 seed: 0
 gpu_id: 0
 lr: 4e-5
+rb_size: 1e6
 batch_size: 16
-traj_length: 65
-num_steps: 1040
+batch_length: 65 
 replay_ratio: 32
 agent:
   task_behavior: Greedy
@@ -59,7 +59,7 @@ agent:
 env:
   env_name: Craftax-Classic-Pixels-v1
   autoreset: true
-  num_envs: 64
+  num_envs: 16
 hydra:
   run:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_rssm_detersize_${rssm.deter}
