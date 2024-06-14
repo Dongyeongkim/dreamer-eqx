@@ -7,8 +7,12 @@ import ml_collections
 import jax.numpy as jnp
 import jax.random as random
 from craftax.craftax_env import make_craftax_env_from_name
-from craftax_wrapper import BatchEnvWrapper, OptimisticResetVecEnvWrapper, CraftaxWrapper
-from dreamerv3.replay import pushstep
+from craftax_wrapper import (
+    BatchEnvWrapper,
+    OptimisticResetVecEnvWrapper,
+    CraftaxWrapper,
+)
+from dreamerv3.replay import generate_replaybuffer, pushstep, defragmenter, sampler
 
 
 def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
@@ -38,7 +42,7 @@ def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1):
             )  # fixed value; from the craftax paper
         else:
             env = BatchEnvWrapper(env)
-    
+
     env = CraftaxWrapper(env)
 
     return env
@@ -61,62 +65,36 @@ def train_step_fn(carry, num_interaction_steps):
 
 # rollout_fn
 #   - interaction: agent, agent_modules(params), env, env_state, replaybuffer_state, other configs -> env_state, replaybuffer_state
-#   - model training: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah) 
+#   - model training: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah)
 
-def interaction_fn(key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state):
+
+def interaction_fn(
+    key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state
+):
     key, policy_key, env_key = random.split(key)
-    env_state, timestep = env_fn.step(env_key, env_state, agent_state[0][1].argmax(axis=1), env_params)
+    env_state, timestep = env_fn.step(
+        env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
+    )
     timestep["action"] = agent_state[0][1]
-    agent_state, outs = agent_fn.policy(policy_key, agent_modules, agent_state, timestep)
-    
+    agent_state, outs = agent_fn.policy(
+        policy_key, agent_modules, agent_state, timestep
+    )
+
     rb_state = pushstep(rb_state, timestep)
     return agent_state, env_state, rb_state
+
 
 # 1. interaction (env.step -> rb pushing -> send state over carry...)
 # 2. worldmodel + actor-critic learning ( rb sampling -> training)
 # 3. report?
 
 
-def rollout_fn(agent, env, ):
+def rollout_fn(agent, env):
     pass
 
 
 def inference_fn(agent, env, agent_modules, replaybuffer, **kwargs):
     pass
-
-
-# def craftax_rollout_fn(env, agent, states, rollout_num):
-#     def step_fn(carry, _):
-#         key, policy_key, step_key = random.split(carry["key"], num=3)
-#         policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
-#         obs, env_state, reward, done, info = env.step(
-#             step_key,
-#             carry["env_state"],
-#             outs["action"].argmax(axis=1),
-#             env.default_params,
-#         )
-#         return {
-#             "key": key,
-#             "env_state": env_state,
-#             "policy_state": policy_state,
-#             "observation": jax.image.resize(
-#                 obs, (obs.shape[0], 64, 64, obs.shape[3]), method="nearest"
-#             ),
-#             "is_first": done,
-#             "reward": reward,
-#         }, {
-#             "observation": carry["observation"],
-#             "deter": policy_state[0][0]["deter"],
-#             "stoch": policy_state[0][0]["stoch"],
-#             "action": outs["action"],
-#             "reward": reward,
-#             "is_first": carry["is_first"],
-#             "is_last": done,
-#             "is_terminal": jnp.equal(info["discount"], 0)
-#         }
-
-#     carry, outs = jax.lax.scan(step_fn, states, jnp.arange(rollout_num), unroll=False)
-#     return carry, outs
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
@@ -139,51 +117,24 @@ def main(cfg):
     dreamer = make_dreamer(env, config, dreamer_key)
     dreamer_state = dreamer.policy_initial(config["env"]["num_envs"])
     print("Building the agent is now done...")
-    states = {
-        "key": rng,
-        "env_state": env_state,
-        "policy_state": dreamer_state,
-        "observation": jax.image.resize(
-            first_obs,
-            (first_obs.shape[0], 64, 64, first_obs.shape[3]),
-            method="nearest",
-        ),
-        "is_first": jnp.bool_(jnp.ones((env.num_envs,))),
-        "reward": jnp.zeros((env.num_envs,)),
-    }
-    rb = ReplayBuffer(
-        buffer_size=5_000_000,
-        key_and_desired_dim={
-            "observation": 4,
-            "deter": 2,
-            "stoch": 3,
-            "action": 2,
-            "reward": 1,
-            "is_first": 1,
-            "is_last": 1,
-            "is_terminal": 1,
-        },
+    print("ReplayBuffer generation")
+    rb_state = generate_replaybuffer(
+        buffer_size=1_000_000,
+        desired_key_dim={},
         batch_size=16,
-        chunk_size=config.num_steps,
+        batch_length=65,
+        num_env=16,
     )
-    import time
-    a = time.time()
-    states, outs = craftax_rollout_fn(
-        env, dreamer, states, rollout_num=config.num_steps
+    interaction_fn(
+        jax.random.key(0),
+        dreamer,
+        _,
+        dreamer_state,
+        env,
+        env_params,
+        env_state,
+        rb_state,
     )
-    print(f"fps: {config.num_steps * config.env.num_envs /(time.time()-a)}")
-    print(outs.keys())
-    rb.push(outs)
-    print(rb.buffer.keys())
-    total_losses = []
-    for _ in tqdm.tqdm(range(config.env.num_envs*config.num_steps//config.replay_ratio)):
-        key, sampling_key, training_key = jax.random.split(key, num=3)
-        chunk = rb.sample(sampling_key)
-        total_loss, _ = dreamer.train(training_key, dreamer.train_initial(config.batch_size), chunk)
-        total_losses.append(total_loss)
-    import matplotlib.pyplot as plt
-    plt.plot(total_losses)
-    plt.savefig("loss.png")
 
 
 if __name__ == "__main__":
