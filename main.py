@@ -1,114 +1,10 @@
 import os
-import jax
-import tqdm
 import hydra
-import dreamerv3
 import ml_collections
-import jax.numpy as jnp
-import jax.random as random
-from craftax.craftax_env import make_craftax_env_from_name
-from craftax_wrapper import (
-    BatchEnvWrapper,
-    OptimisticResetVecEnvWrapper,
-    CraftaxWrapper,
-)
-from dreamerv3.replay import generate_replaybuffer, pushstep, defragmenter, sampler
 
-
-def make_dmc_env(env_name: str, use_egl=False, support_gpu=False, **kwargs):
-    if use_egl and support_gpu:
-        os.environ["MUJOCO_GL"] = "egl"
-        os.environ["MUJOCO_RENDERER"] = "egl"
-    from envs import VecDmEnvWrapper, Walker2d, Cheetah
-
-    if env_name == "walker2d":
-        env = Walker2d()
-    elif env_name == "cheetah":
-        env = Cheetah()
-    else:
-        raise ValueError(f"Unsupported environment: {env_name}")
-    env = VecDmEnvWrapper(env, **kwargs)
-
-    return env
-
-
-def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1):
-    assert num_envs > 0, "number of the environments must be greater or equal than 1"
-    env = make_craftax_env_from_name(env_name, not autoreset)
-    if num_envs > 1:
-        if autoreset:
-            env = OptimisticResetVecEnvWrapper(
-                env, num_envs=num_envs, reset_ratio=16
-            )  # fixed value; from the craftax paper
-        else:
-            env = BatchEnvWrapper(env)
-
-    env = CraftaxWrapper(env)
-
-    return env
-
-
-def make_dreamer(env, config, key):
-    obs_space = env.observation_space(env.default_params).shape
-    act_space = env.action_space(env.default_params).n
-    dreamer = dreamerv3.DreamerV3(key, obs_space, act_space, config=config)
-    modules = dreamerv3.DreamerV3_modules(key, obs_space, act_space, config=config)
-    return dreamer, modules
-
-
-# rollout_fn
-#   - interaction: agent, agent_modules(params), env, env_state, replaybuffer_state, other configs -> env_state, replaybuffer_state
-#   - train_step: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah)
-
-
-def rollout_fn(
-        key,
-        num_steps,
-        agent_fn,
-        agent_modules,
-        agent_state,
-        env_fn,
-        env_params,
-        env_state,
-        opt_fn,
-        opt_state,
-        rb_state,
-):
-    def step_fn(carry, idx):
-        if idx % replay_ratio == 0 and idx != 0:
-            train_step_fn()
-        else:
-            interaction_fn()
-        return {}, _
-
-    carry, _ = jax.lax.scan(step_fn, carry, jnp.arange(num_steps), unroll=False)
-
-
-def interaction_fn(
-        key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state
-):
-    key, policy_key, env_key = random.split(key, num=3)
-    env_state, timestep = env_fn.step(
-        env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
-    )
-    timestep["action"] = agent_state[0][1]
-    agent_state, outs = agent_fn.policy(
-        policy_key, agent_modules, agent_state, timestep
-    )
-
-    rb_state = pushstep(rb_state, timestep)
-    return agent_state, env_state, rb_state
-
-
-def train_step_fn(
-        key, agent_fn, agent_modules, agent_state, opt_fn, opt_state, rb_state
-):
-    rb_sampling_key, training_key = random.split(key, num=2)
-    sampled_data = sampler(rb_sampling_key, rb_state)
-    agent_modules, agent_state, opt_state, metrics = agent_fn.train(
-        training_key, agent_modules, agent_state, opt_fn, opt_state, sampled_data
-    )
-    return agent_modules, agent_state, opt_state, metrics
+from utils.envutils import make_craftax_env
+from utils.agentutils import make_dreamer
+from utils.trainutils import rollout_fn
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
@@ -116,7 +12,8 @@ def main(cfg):
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
+    import jax
+    from jax import random
     key = random.key(config.seed)
     print(f"Environment is compiling...")
     env = make_craftax_env(**config.env)
@@ -132,24 +29,6 @@ def main(cfg):
     dreamer_state = dreamer.policy_initial(modules, config["env"]["num_envs"])
     print("Building the agent is now done...")
     print("ReplayBuffer generation")
-    rb_state = generate_replaybuffer(
-        buffer_size=1_000_000,
-        desired_key_dim={},
-        batch_size=16,
-        batch_length=65,
-        num_env=16,
-    )
-    interaction_fn(
-        jax.random.key(0),
-        dreamer,
-        modules,
-        dreamer_state,
-        env,
-        env_params,
-        env_state,
-        rb_state,
-    )
-
 
 if __name__ == "__main__":
     main()

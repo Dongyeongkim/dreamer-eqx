@@ -5,10 +5,10 @@ import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from typing import List
-from .utils import symlog, symexp, cast_to_compute
-from .utils import OneHotDist, MSEDist, HuberDist
-from .utils import TransformedMseDist, TwoHotDist
-from .utils import traj_reset, tensorstats
+from .dreamerutils import symlog, symexp, cast_to_compute
+from .dreamerutils import OneHotDist, MSEDist, HuberDist
+from .dreamerutils import TransformedMseDist, TwoHotDist
+from .dreamerutils import traj_reset, tensorstats
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions

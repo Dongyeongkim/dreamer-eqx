@@ -1,7 +1,7 @@
 import equinox as eqx
 import jax.numpy as jnp
 from jax import random
-from .utils import OneHotDist, get_feat
+from .dreamerutils import OneHotDist, get_feat
 from ml_collections import FrozenConfigDict
 from .models import ImagActorCritic, VFunction
 from tensorflow_probability.substrates import jax as tfp

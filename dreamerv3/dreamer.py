@@ -1,15 +1,15 @@
 import jax
-from . import behaviors
 from jax import random
 import jax.numpy as jnp
-from jax.tree_util import tree_map
-from .utils import Optimizer, SlowUpdater, get_feat
+from . import behaviors
 from .models import WorldModel
+from jax.tree_util import tree_map
+
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
 
-def DreamerV3_modules(key, obs_space, act_space, config):
+def generate_dreamerV3_modules(key, obs_space, act_space, config):
     wm_key, ac_key, ac2_key = random.split(key, num=3)
 
     wm = WorldModel(wm_key, obs_space, act_space, config)
@@ -90,7 +90,7 @@ class DreamerV3:
         modules, opt_state, total_loss, loss_and_info = opt.update(
             key, opt_state, self.loss, modules, carry, data
         )
-        return modules, total_loss, loss_and_info, opt, opt_state
+        return modules, total_loss, loss_and_info, opt_state
 
     def loss(self, modules, key, carry, data):
         losses = {}

@@ -3,7 +3,7 @@ import numpy as np
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
-from .utils import (
+from .dreamerutils import (
     MSEDist,
     Moments,
     get_feat,
