@@ -52,7 +52,8 @@ def make_dreamer(env, config, key):
     obs_space = env.observation_space(env.default_params).shape
     act_space = env.action_space(env.default_params).n
     dreamer = dreamerv3.DreamerV3(key, obs_space, act_space, config=config)
-    return dreamer
+    modules = dreamerv3.DreamerV3_modules(key, obs_space, act_space, config=config)
+    return dreamer, modules
 
 
 # rollout_fn
@@ -61,17 +62,17 @@ def make_dreamer(env, config, key):
 
 
 def rollout_fn(
-    key,
-    num_steps,
-    agent_fn,
-    agent_modules,
-    agent_state,
-    env_fn,
-    env_params,
-    env_state,
-    opt_fn,
-    opt_state,
-    rb_state,
+        key,
+        num_steps,
+        agent_fn,
+        agent_modules,
+        agent_state,
+        env_fn,
+        env_params,
+        env_state,
+        opt_fn,
+        opt_state,
+        rb_state,
 ):
     def step_fn(carry, idx):
         if idx % replay_ratio == 0 and idx != 0:
@@ -84,7 +85,7 @@ def rollout_fn(
 
 
 def interaction_fn(
-    key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state
+        key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state
 ):
     key, policy_key, env_key = random.split(key, num=3)
     env_state, timestep = env_fn.step(
@@ -100,7 +101,7 @@ def interaction_fn(
 
 
 def train_step_fn(
-    key, agent_fn, agent_modules, agent_state, opt_fn, opt_state, rb_state
+        key, agent_fn, agent_modules, agent_state, opt_fn, opt_state, rb_state
 ):
     rb_sampling_key, training_key = random.split(key, num=2)
     sampled_data = sampler(rb_sampling_key, rb_state)
@@ -127,8 +128,7 @@ def main(cfg):
     print(f"Setting the environments is now done...")
     print("Building the agent...")
     key, dreamer_key = jax.random.split(key)
-    dreamer = make_dreamer(env, config, dreamer_key)
-    modules = dreamer.modules()
+    dreamer, modules = make_dreamer(env, config, dreamer_key)
     dreamer_state = dreamer.policy_initial(modules, config["env"]["num_envs"])
     print("Building the agent is now done...")
     print("ReplayBuffer generation")

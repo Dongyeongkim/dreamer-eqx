@@ -9,6 +9,26 @@ from .models import WorldModel
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
 
+def DreamerV3_modules(key, obs_space, act_space, config):
+    wm_key, ac_key, ac2_key = random.split(key, num=3)
+
+    wm = WorldModel(wm_key, obs_space, act_space, config)
+    task_behavior = getattr(behaviors, config.agent.task_behavior)(
+        ac_key, wm, act_space, config
+    )
+    if config.agent.expl_behavior == "None":
+        expl_behavior = task_behavior
+    else:
+        expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
+            ac2_key, wm, act_space, config
+        )
+    return {
+        "wm": wm,
+        "task_behavior": task_behavior,
+        "expl_behavior": expl_behavior,
+    }
+
+
 class DreamerV3:
     def __init__(self, key, obs_space, act_space, step=0, config=None):
         self.config = config
@@ -16,32 +36,8 @@ class DreamerV3:
         self.act_space = act_space
         self.step = step
         self.scales = self.config.loss_scales
-
-        wm_key, ac_key, ac2_key = random.split(key, num=3)
-
-        self.wm = WorldModel(wm_key, self.obs_space, self.act_space, self.config)
-        self.task_behavior = getattr(behaviors, config.agent.task_behavior)(
-            ac_key, self.wm, self.act_space, self.config
-        )
-        if config.agent.expl_behavior == "None":
-            self.expl_behavior = self.task_behavior
-        else:
-            self.expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
-                ac2_key, self.wm, self.act_space, self.config
-            )
-        self.updater = SlowUpdater(
-            fraction=self.config.slow_critic_fraction,
-            period=self.config.slow_critic_fraction,
-        )
         # self.opt = Optimizer(lr=self.config.lr)
         # self.opt_state = self.opt.init(self.modules)
-
-    def modules(self):
-        return {
-            "wm": self.wm,
-            "task_behavior": self.task_behavior,
-            "expl_behavior": self.expl_behavior,
-        }
 
     def policy_initial(self, modules, batch_size):
         return (
@@ -50,8 +46,8 @@ class DreamerV3:
             modules["expl_behavior"].initial(batch_size),
         )
 
-    def train_initial(self, batch_size):
-        return self.modules["wm"].initial(batch_size)
+    def train_initial(self, modules, batch_size):
+        return modules["wm"].initial(batch_size)
 
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
