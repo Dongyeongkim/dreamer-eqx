@@ -79,6 +79,7 @@ def rollout_fn(
         else:
             interaction_fn()
         return {}, _
+
     carry, _ = jax.lax.scan(step_fn, carry, jnp.arange(num_steps), unroll=False)
 
 

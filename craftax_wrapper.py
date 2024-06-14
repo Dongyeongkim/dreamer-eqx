@@ -159,7 +159,9 @@ class CraftaxWrapper(GymnaxWrapper):
         }
 
     def step(self, rng, env_state, action, params=None):
-        obs, env_state, reward, done, info = self._env.step(rng, env_state, action, params)
+        obs, env_state, reward, done, info = self._env.step(
+            rng, env_state, action, params
+        )
         return env_state, {
             "observation": obs,
             "reward": reward,
