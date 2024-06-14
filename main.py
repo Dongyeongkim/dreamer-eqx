@@ -55,23 +55,37 @@ def make_dreamer(env, config, key):
     return dreamer
 
 
-def train_step_fn(carry, num_interaction_steps):
-    if num_interaction_steps % carry["train_every"] == 0:
-        buffer_state = carry["buffer_state"]
-        return carry, None
-    else:
-        return carry, None
-
-
 # rollout_fn
 #   - interaction: agent, agent_modules(params), env, env_state, replaybuffer_state, other configs -> env_state, replaybuffer_state
-#   - model training: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah)
+#   - train_step: agent, agent_modules(params), optimizer, optimizer_state, replaybuffer_state -> agent_modules(params), opt_state, metrics(loss, images, blah blah)
+
+
+def rollout_fn(
+    key,
+    num_steps,
+    agent_fn,
+    agent_modules,
+    agent_state,
+    env_fn,
+    env_params,
+    env_state,
+    opt_fn,
+    opt_state,
+    rb_state,
+):
+    def step_fn(carry, idx):
+        if idx % replay_ratio == 0 and idx != 0:
+            train_step_fn()
+        else:
+            interaction_fn()
+        return {}, _
+    carry, _ = jax.lax.scan(step_fn, carry, jnp.arange(num_steps), unroll=False)
 
 
 def interaction_fn(
     key, agent_fn, agent_modules, agent_state, env_fn, env_params, env_state, rb_state
 ):
-    key, policy_key, env_key = random.split(key)
+    key, policy_key, env_key = random.split(key, num=3)
     env_state, timestep = env_fn.step(
         env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
     )
@@ -84,17 +98,15 @@ def interaction_fn(
     return agent_state, env_state, rb_state
 
 
-# 1. interaction (env.step -> rb pushing -> send state over carry...)
-# 2. worldmodel + actor-critic learning ( rb sampling -> training)
-# 3. report?
-
-
-def rollout_fn(agent, env):
-    pass
-
-
-def inference_fn(agent, env, agent_modules, replaybuffer, **kwargs):
-    pass
+def train_step_fn(
+    key, agent_fn, agent_modules, agent_state, opt_fn, opt_state, rb_state
+):
+    rb_sampling_key, training_key = random.split(key, num=2)
+    sampled_data = sampler(rb_sampling_key, rb_state)
+    agent_modules, agent_state, opt_state, metrics = agent_fn.train(
+        training_key, agent_modules, agent_state, opt_fn, opt_state, sampled_data
+    )
+    return agent_modules, agent_state, opt_state, metrics
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
