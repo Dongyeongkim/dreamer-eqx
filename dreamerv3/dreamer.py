@@ -76,7 +76,7 @@ class DreamerV3:
             raise NotImplementedError
         return modules, state, outs
 
-    def train(self, modules, key, carry, data):
+    def train(self, modules, key, carry, data, opt, opt_state):
         context_data = data.copy()
         context = {
             k: context_data.pop(k)[:, :1] for k in modules['wm'].rssm.initial(1).keys()
@@ -85,10 +85,10 @@ class DreamerV3:
         prevact = data["action"][:, 0]
         carry = prevlat, prevact
         data = {k: v[:, 1:] for k, v in data.items()}
-        self.modules, self.opt_state, total_loss, loss_and_info = self.opt.update(
-            key, self.opt_state, self.loss, self.modules, carry, data
+        modules, opt_state, total_loss, loss_and_info = opt.update(
+            key, opt_state, self.loss, modules, carry, data
         )
-        return modules, total_loss, loss_and_info
+        return modules, total_loss, loss_and_info, opt, opt_state
 
     def loss(self, modules, key, carry, data):
         losses = {}

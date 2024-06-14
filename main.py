@@ -135,16 +135,20 @@ def main(cfg):
     states, outs = craftax_rollout_fn(
         env, dreamer, states, rollout_num=config.num_steps
     )
-    print(f"fps: {config.num_steps * config.env.num_envs /(time.time()-a)}")
+    print(f"fps: {config.num_steps * config.env.num_envs / (time.time() - a)}")
     print(outs.keys())
     rb.push(outs)
     print(rb.buffer.keys())
     total_losses = []
     modules = dreamer.modules
-    for _ in tqdm.tqdm(range(config.env.num_envs*config.num_steps//config.replay_ratio)):
+    opt = dreamer.opt
+    opt_state = dreamer.opt_state
+    for _ in tqdm.tqdm(range(config.env.num_envs * config.num_steps // config.replay_ratio)):
         key, sampling_key, training_key = jax.random.split(key, num=3)
         chunk = rb.sample(sampling_key)
-        modules, total_loss, _ = dreamer.train(modules, training_key, dreamer.train_initial(config.batch_size), chunk)
+        modules, total_loss, _, opt, opt_state = dreamer.train(modules, training_key,
+                                                               dreamer.train_initial(config.batch_size), chunk, opt,
+                                                               opt_state)
 
 
 if __name__ == "__main__":
