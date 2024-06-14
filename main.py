@@ -52,7 +52,7 @@ def make_dreamer(env, config, key):
 def craftax_rollout_fn(env, agent, states, rollout_num):
     def step_fn(carry, _):
         key, policy_key, step_key = random.split(carry["key"], num=3)
-        policy_state, outs = agent.policy(policy_key, carry["policy_state"], carry)
+        _, policy_state, outs = agent.policy(agent.modules, policy_key, carry["policy_state"], carry)
         obs, env_state, reward, done, info = env.step(
             step_key,
             carry["env_state"],
@@ -140,10 +140,11 @@ def main(cfg):
     rb.push(outs)
     print(rb.buffer.keys())
     total_losses = []
+    modules = dreamer.modules
     for _ in tqdm.tqdm(range(config.env.num_envs*config.num_steps//config.replay_ratio)):
         key, sampling_key, training_key = jax.random.split(key, num=3)
         chunk = rb.sample(sampling_key)
-        total_loss, _ = dreamer.train(training_key, dreamer.train_initial(config.batch_size), chunk)
+        modules, total_loss, _ = dreamer.train(modules, training_key, dreamer.train_initial(config.batch_size), chunk)
 
 
 if __name__ == "__main__":

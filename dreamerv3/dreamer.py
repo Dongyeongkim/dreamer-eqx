@@ -33,31 +33,31 @@ class DreamerV3:
             fraction=self.config.slow_critic_fraction,
             period=self.config.slow_critic_fraction,
         )
-        self.modules = {"wm": self.wm, "ac": self.task_behavior}
+        self.modules = {"wm": self.wm, "task_behavior": self.task_behavior, "expl_behavior": self.expl_behavior}
         self.opt = Optimizer(lr=self.config.lr)
         self.opt_state = self.opt.init(self.modules)
 
     def policy_initial(self, batch_size):
         return (
-            self.wm.initial(batch_size),
-            self.task_behavior.initial(batch_size),
-            self.expl_behavior.initial(batch_size),
+            self.modules['wm'].initial(batch_size),
+            self.modules['task_behavior'].initial(batch_size),
+            self.modules['expl_behavior'].initial(batch_size),
         )
 
     def train_initial(self, batch_size):
-        return self.wm.initial(batch_size)
+        return self.modules['wm'].initial(batch_size)
 
-    def policy(self, key, state, obs, mode="train"):
+    def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
-        embed = self.wm.encoder(obs["observation"])
+        embed = modules['wm'].encoder(obs["observation"])
         (prev_latent, prev_action), task_state, expl_state = state
         prev_latent["key"] = obs_key
-        _, latent = self.wm.rssm.obs_step(
+        _, latent = modules['wm'].rssm.obs_step(
             prev_latent, (prev_action, embed, obs["is_first"])
         )
         _, _ = latent.pop("post"), latent.pop("prior")
-        task_state, task_outs = self.task_behavior.policy(task_state, latent)
-        expl_state, expl_outs = self.expl_behavior.policy(expl_state, latent)
+        task_state, task_outs = modules['task_behavior'].policy(task_state, latent)
+        expl_state, expl_outs = modules['expl_behavior'].policy(expl_state, latent)
 
         if mode == "eval":
             outs = task_outs
@@ -72,21 +72,23 @@ class DreamerV3:
             outs["log_entropy"] = outs["action"].entropy()
             outs["action"] = outs["action"].sample(seed=act_key)
             state = ((latent, outs["action"]), task_state, expl_state)
-        return state, outs
+        else:
+            raise NotImplementedError
+        return modules, state, outs
 
-    def train(self, key, carry, data):
+    def train(self, modules, key, carry, data):
         context_data = data.copy()
         context = {
-            k: context_data.pop(k)[:, :1] for k in self.wm.rssm.initial(1).keys()
+            k: context_data.pop(k)[:, :1] for k in modules['wm'].rssm.initial(1).keys()
         }
-        prevlat = self.wm.rssm.outs_to_carry(context)
+        prevlat = modules['wm'].rssm.outs_to_carry(context)
         prevact = data["action"][:, 0]
         carry = prevlat, prevact
         data = {k: v[:, 1:] for k, v in data.items()}
         self.modules, self.opt_state, total_loss, loss_and_info = self.opt.update(
             key, self.opt_state, self.loss, self.modules, carry, data
         )
-        return total_loss, loss_and_info
+        return modules, total_loss, loss_and_info
 
     def loss(self, modules, key, carry, data):
         losses = {}
@@ -115,7 +117,7 @@ class DreamerV3:
             "startrew": startrew,
             "startcon": startcon,
         }
-        ac_losses, ac_metrics = modules["ac"].loss(
+        ac_losses, ac_metrics = modules["task_behavior"].loss(
             ac_loss_key, modules["wm"].imagine, start
         )
         losses.update(ac_losses)
@@ -125,7 +127,7 @@ class DreamerV3:
             ret = losses.pop("ret")
             data_with_wm_outs = {**data, **wm_outs}
             replay_critic_loss = (
-                modules["ac"]
+                modules["task_behavior"]
                 .ac.critic["extr"]
                 .replay_critic_loss(data_with_wm_outs, ret)
             )
