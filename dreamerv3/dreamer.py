@@ -33,19 +33,21 @@ class DreamerV3:
             fraction=self.config.slow_critic_fraction,
             period=self.config.slow_critic_fraction,
         )
-        self.modules = {
+        # self.opt = Optimizer(lr=self.config.lr)
+        # self.opt_state = self.opt.init(self.modules)
+
+    def modules(self):
+        return {
             "wm": self.wm,
             "task_behavior": self.task_behavior,
             "expl_behavior": self.expl_behavior,
         }
-        self.opt = Optimizer(lr=self.config.lr)
-        self.opt_state = self.opt.init(self.modules)
 
-    def policy_initial(self, batch_size):
+    def policy_initial(self, modules, batch_size):
         return (
-            self.modules["wm"].initial(batch_size),
-            self.modules["task_behavior"].initial(batch_size),
-            self.modules["expl_behavior"].initial(batch_size),
+            modules["wm"].initial(batch_size),
+            modules["task_behavior"].initial(batch_size),
+            modules["expl_behavior"].initial(batch_size),
         )
 
     def train_initial(self, batch_size):

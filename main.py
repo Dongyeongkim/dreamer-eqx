@@ -128,7 +128,8 @@ def main(cfg):
     print("Building the agent...")
     key, dreamer_key = jax.random.split(key)
     dreamer = make_dreamer(env, config, dreamer_key)
-    dreamer_state = dreamer.policy_initial(config["env"]["num_envs"])
+    modules = dreamer.modules()
+    dreamer_state = dreamer.policy_initial(modules, config["env"]["num_envs"])
     print("Building the agent is now done...")
     print("ReplayBuffer generation")
     rb_state = generate_replaybuffer(
@@ -141,7 +142,7 @@ def main(cfg):
     interaction_fn(
         jax.random.key(0),
         dreamer,
-        _,
+        modules,
         dreamer_state,
         env,
         env_params,
