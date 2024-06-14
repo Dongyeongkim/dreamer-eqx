@@ -28,7 +28,7 @@ def rollout_fn(
             rb_state = defragmenter(rb_state)
 
         if idx % replay_ratio == 0 and idx != 0:
-            carry = train_wm_fn(agent_fn, env_fn, opt_fn, **carry)
+            carry = train_agent_fn(agent_fn, env_fn, opt_fn, **carry)
             return carry, _
         else:
             carry = interaction_fn(agent_fn, env_fn, opt_fn, **carry)
@@ -80,7 +80,7 @@ def interaction_fn(
     }
 
 
-def train_wm_fn(
+def train_agent_fn(
     agent_fn,
     env_fn,
     opt_fn,
