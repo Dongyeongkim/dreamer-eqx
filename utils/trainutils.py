@@ -1,4 +1,5 @@
 import jax
+import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from dreamerv3.replay import defragmenter, pushstep, sampler
@@ -52,7 +53,7 @@ def interaction_fn(
     agent_fn,
     env_fn,
     opt_fn,
-    interaction_key,
+    key,
     agent_modules,
     agent_state,
     env_params,
@@ -60,7 +61,7 @@ def interaction_fn(
     opt_state,
     rb_state,
 ):
-    key, policy_key, env_key = random.split(interaction_key, num=3)
+    key, policy_key, env_key = random.split(key, num=3)
     env_state, timestep = env_fn.step(
         env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
     )
@@ -68,7 +69,7 @@ def interaction_fn(
     timestep["stoch"] = agent_state[0][0]["stoch"]
     timestep["action"] = agent_state[0][1]
     agent_state, outs = agent_fn.policy(
-        policy_key, agent_modules, agent_state, timestep
+        agent_modules, policy_key, agent_state, timestep
     )
 
     rb_state = pushstep(rb_state, timestep)
@@ -86,7 +87,7 @@ def train_agent_fn(
     agent_fn,
     env_fn,
     opt_fn,
-    training_key,
+    key,
     agent_modules,
     agent_state,
     env_params,
@@ -94,7 +95,7 @@ def train_agent_fn(
     opt_state,
     rb_state,
 ):
-    key, rb_sampling_key, training_key = random.split(training_key, num=2)
+    key, rb_sampling_key, training_key = random.split(key, num=2)
     sampled_data = sampler(rb_sampling_key, rb_state)
     agent_modules, total_loss, loss_and_info, opt_state = agent_fn.train(
         training_key, agent_modules, agent_state, opt_fn, opt_state, sampled_data
@@ -125,17 +126,23 @@ def prefill_fn(
     opt_state,
     rb_state,
 ):
+    agent_modules_params, agent_modules_static = eqx.partition(agent_modules, eqx.is_array)
+    rb_state_dynamcis, rb_state_statics = eqx.partition(rb_state, eqx.is_array)
     def step_fn(carry, _):
+        carry["agent_modules"] = eqx.combine(carry["agent_modules"], agent_modules_static)
+        carry["rb_state"] = eqx.combine(carry["rb_state"], rb_state_statics)
         carry = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
+        carry["agent_modules"], _ = eqx.partition(carry["agent_modules"], eqx.is_array)
+        carry["rb_state"], _ = eqx.partition(carry["rb_state"], eqx.is_array)
         return carry, _
 
     init_carry = {
         "key": key,
-        "agent_modules": agent_modules,
+        "agent_modules": agent_modules_params,
         "agent_state": agent_state,
         "opt_state": opt_state,
         "env_state": env_state,
-        "rb_state": rb_state,
+        "rb_state": rb_state_dynamcis,
     }
 
     carry, _ = jax.lax.scan(step_fn, init_carry, jnp.arange(num_steps), unroll=False)
