@@ -167,5 +167,5 @@ class CraftaxWrapper(GymnaxWrapper):
             "reward": reward,
             "is_first": jnp.bool(jnp.maximum(env_state.timestep, 0)),
             "is_last": done,
-            "is_terminal": info["discount"],
+            "is_terminal": jnp.bool(info["discount"]),
         }

@@ -1,4 +1,5 @@
 import jax
+import tqdm
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
@@ -8,6 +9,7 @@ from dreamerv3.replay import defragmenter, pushstep, sampler
 # rollout_fn
 #   - interaction_fn: interacting with jax environment
 #   - train_wm_fn: training wm with function
+
 
 def rollout_fn(
     key,
@@ -24,18 +26,7 @@ def rollout_fn(
     opt_state,
     rb_state,
 ):
-    def step_fn(carry, idx):
-        if idx % defrag_ratio == 0 and idx != 0:
-            rb_state = defragmenter(rb_state)
-
-        if idx % replay_ratio == 0 and idx != 0:
-            carry = train_agent_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
-            return carry, _
-        else:
-            carry = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
-            return carry, _
-
-    init_carry = {
+    state = {
         "key": key,
         "agent_modules": agent_modules,
         "agent_state": agent_state,
@@ -44,9 +35,19 @@ def rollout_fn(
         "rb_state": rb_state,
     }
 
-    carry, _ = jax.lax.scan(step_fn, init_carry, jnp.arange(num_steps), unroll=False)
+    for idx in tqdm.tqdm(range(num_steps)):
+        if idx % defrag_ratio == 0:
+            state["rb_state"] = defragmenter(state["rb_state"])
 
-    return carry
+        if idx % replay_ratio == 0:
+            state, lossval = train_agent_fn(
+                agent_fn, env_fn, opt_fn, env_params=env_params, **state
+            )
+            print(lossval)
+
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
+
+    return state
 
 
 def interaction_fn(
@@ -68,7 +69,7 @@ def interaction_fn(
     timestep["deter"] = agent_state[0][0]["deter"]
     timestep["stoch"] = agent_state[0][0]["stoch"]
     timestep["action"] = agent_state[0][1]
-    agent_state, outs = agent_fn.policy(
+    agent_state, outs = eqx.filter_jit(agent_fn.policy)(
         agent_modules, policy_key, agent_state, timestep
     )
 
@@ -95,10 +96,17 @@ def train_agent_fn(
     opt_state,
     rb_state,
 ):
-    key, rb_sampling_key, training_key = random.split(key, num=2)
+    key, rb_sampling_key, training_key = random.split(key, num=3)
     sampled_data = sampler(rb_sampling_key, rb_state)
-    agent_modules, total_loss, loss_and_info, opt_state = agent_fn.train(
-        training_key, agent_modules, agent_state, opt_fn, opt_state, sampled_data
+    agent_modules, total_loss, loss_and_info, opt_state = eqx.filter_jit(
+        agent_fn.train
+    )(
+        agent_modules,
+        training_key,
+        agent_state,
+        sampled_data,
+        opt_fn,
+        opt_state,
     )
     return {
         "key": key,
@@ -107,11 +115,12 @@ def train_agent_fn(
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
-    }
+    }, total_loss
 
 
-# prefill_fn 
+# prefill_fn
 #   - interaction_fn: only interactions to fill replay buffer
+
 
 def prefill_fn(
     key,
@@ -126,25 +135,16 @@ def prefill_fn(
     opt_state,
     rb_state,
 ):
-    agent_modules_params, agent_modules_static = eqx.partition(agent_modules, eqx.is_array)
-    rb_state_dynamcis, rb_state_statics = eqx.partition(rb_state, eqx.is_array)
-    def step_fn(carry, _):
-        carry["agent_modules"] = eqx.combine(carry["agent_modules"], agent_modules_static)
-        carry["rb_state"] = eqx.combine(carry["rb_state"], rb_state_statics)
-        carry = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **carry)
-        carry["agent_modules"], _ = eqx.partition(carry["agent_modules"], eqx.is_array)
-        carry["rb_state"], _ = eqx.partition(carry["rb_state"], eqx.is_array)
-        return carry, _
-
-    init_carry = {
+    state = {
         "key": key,
-        "agent_modules": agent_modules_params,
+        "agent_modules": agent_modules,
         "agent_state": agent_state,
         "opt_state": opt_state,
         "env_state": env_state,
-        "rb_state": rb_state_dynamcis,
+        "rb_state": rb_state,
     }
 
-    carry, _ = jax.lax.scan(step_fn, init_carry, jnp.arange(num_steps), unroll=False)
+    for _ in tqdm.tqdm(range(num_steps)):
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
 
-    return carry["rb_state"]
+    return state["rb_state"]

@@ -64,7 +64,7 @@ def main(cfg):
     key, prefill_key = jax.random.split(key)
     rb_state = prefill_fn(
         prefill_key,
-        1040,
+        65,
         dreamer,
         env,
         opt_fn,
@@ -75,6 +75,23 @@ def main(cfg):
         opt_state,
         rb_state,
     )
+    print("Prefilled!")
+    key, training_key = jax.random.split(key)
+    state = rollout_fn(
+        key=training_key,
+        num_steps=65*30,
+        defrag_ratio=65,
+        replay_ratio=2,
+        agent_fn=dreamer,
+        env_fn=env,
+        opt_fn=opt_fn,
+        agent_modules=dreamer_modules,
+        agent_state=dreamer_state,
+        env_params=env_params,
+        env_state=env_state,
+        opt_state=opt_state,
+        rb_state=rb_state)
+    
     breakpoint()
 
 

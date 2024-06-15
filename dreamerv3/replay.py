@@ -77,6 +77,8 @@ def defragmenter(buffer_state):
         tree_unflatten(buffer_state.input_pytreedef, data)
         for data in buffer_state.left[:splitpoint]
     ]
+    if len(restored) == 0:
+        return buffer_state
 
     buffer_state.left = buffer_state.left[splitpoint:]
 
