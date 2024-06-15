@@ -107,7 +107,7 @@ class DreamerV3:
             eqx.combine(ema_slowcritic, slowcritic_static),
         )
 
-        return modules, total_loss, loss_and_info, opt_state
+        return modules, opt_state, total_loss, loss_and_info
 
     def loss(self, modules, key, carry, data):
         losses = {}

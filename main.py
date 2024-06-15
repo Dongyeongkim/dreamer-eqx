@@ -9,11 +9,15 @@ def main(cfg):
 
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
-
+    path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
+    
+    from utils.logger import Logger
     from utils.envutils import make_craftax_env
     from utils.agentutils import make_dreamer
     from utils.trainutils import prefill_fn, train_and_evaluate_fn
     from dreamerv3.replay import generate_replaybuffer
+
+    logger = Logger(path)
 
     import jax
     from jax import random
@@ -86,6 +90,7 @@ def main(cfg):
         num_steps=65 * 30,
         defrag_ratio=65,
         replay_ratio=32,
+        logger=logger,
         agent_fn=dreamer,
         env_fn=env,
         opt_fn=opt_fn,

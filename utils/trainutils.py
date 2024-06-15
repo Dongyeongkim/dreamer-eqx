@@ -13,6 +13,7 @@ def train_and_evaluate_fn(
     num_steps,
     defrag_ratio,
     replay_ratio,
+    logger,
     agent_fn,
     env_fn,
     opt_fn,
@@ -42,6 +43,8 @@ def train_and_evaluate_fn(
             state, lossval, loss_and_info = train_agent_fn(
                 agent_fn, env_fn, opt_fn, env_params=env_params, **state
             )
+            if idx % 2 * replay_ratio == 0:
+                logger._write(loss_and_info[1], 16*idx)
 
     return state
 
@@ -124,7 +127,7 @@ def train_agent_fn(
 ):
     key, rb_sampling_key, training_key = random.split(key, num=3)
     sampled_data = sampler(rb_sampling_key, rb_state)
-    agent_modules, total_loss, loss_and_info, opt_state = eqx.filter_jit(
+    agent_modules, opt_state, total_loss, loss_and_info = eqx.filter_jit(
         agent_fn.train
     )(
         agent_modules,
