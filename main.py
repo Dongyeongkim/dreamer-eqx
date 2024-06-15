@@ -88,7 +88,7 @@ def main(cfg):
         key=training_key,
         num_steps=65*30,
         defrag_ratio=65,
-        replay_ratio=2,
+        replay_ratio=32,
         agent_fn=dreamer,
         env_fn=env,
         opt_fn=opt_fn,
