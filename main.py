@@ -3,17 +3,8 @@ import hydra
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg):
+    
     import os
-
-    os.environ["XLA_FLAGS"] = (
-        "--xla_gpu_simplify_all_fp_conversions"
-        "--xla_gpu_enable_async_all_reduce=true"
-        "--xla_gpu_enable_async_all_gather=true"
-        "--xla_gpu_enable_async_collectives=true "
-        "--xla_gpu_enable_async_reduce_scatter=true"
-        
-    )
-
     import ml_collections
 
     config = ml_collections.ConfigDict(cfg)
