@@ -106,8 +106,14 @@ class WorldModel(eqx.Module):
                     losses.update(
                         {log_name: -dist.log_prob(data[data_name].astype("float32"))}
                     )
-
+        metrics.update(self._metrics(data))
         return losses, (carry, outs, metrics)
+
+    def _metrics(self, data):
+        metrics = {}
+        metrics["data_rew/max"] = jnp.abs(data["reward"]).max()
+        metrics["data_rew/std"] = data["reward"].std()
+        return metrics
 
     def imagine(self, key, policy, start, horizon):
         first_cont = start["startcon"]
@@ -246,13 +252,13 @@ class ImagActorCritic(eqx.Module):
         return carry, {"action": self.actor(get_feat(latent))}
 
     def loss(self, key, imagine, start, update=True):
-        metrics = {"test": "hello"}
         losses = {}
+        metric_key, imagine_key = random.split(key, num=2)
         policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
 
-        traj = imagine(key, policy, start, self.config.agent.imag_horizon)
+        traj = imagine(imagine_key, policy, start, self.config.agent.imag_horizon)
         traj = {k: sg(v) for k, v in traj.items()}
-        rew, ret, tarval, critic, slowcritic = self.critic["extr"].score(traj)
+        rew, ret, tarval, val, critic, slowcritic = self.critic["extr"].score(traj)
 
         voffset, vscale = self.critic["extr"].valnorm(ret, update)
         roffset, rscale = self.retnorm(ret, update)
@@ -285,10 +291,32 @@ class ImagActorCritic(eqx.Module):
         if self.config.replay_critic_loss:
             losses["ret"] = ret
 
+        metrics = self._metrics(metric_key, adv, rew, val, ret, roffset, rscale, traj)
+
         return losses, metrics
 
-    def _metrics(self, key, traj, policy, logpi, ent, adv):
-        pass
+    def _metrics(self, key, adv, rew, val, ret, roffset, rscale, traj):
+        metrics = {}
+        key, adv_key, rew_key, weight_key, val_key, ret_key, ret_normed_key = (
+            random.split(key, num=7)
+        )
+        metrics.update(tensorstats(adv_key, adv, "adv"))
+        metrics.update(tensorstats(rew_key, rew, "rew"))
+        metrics.update(tensorstats(weight_key, traj["weight"], "weight"))
+        metrics.update(tensorstats(val_key, val, "val"))
+        metrics.update(tensorstats(ret_key, ret, "ret"))
+        metrics.update(
+            tensorstats(ret_normed_key, (ret - roffset) / rscale, "ret_normed")
+        )
+        
+        metrics["td_error"] = jnp.abs(ret - val[:, :-1]).mean()
+        metrics["ret_rate"] = (jnp.abs(ret) > 1.0).mean()
+
+        metrics["pred_rew/max"] = jnp.abs(rew).max()
+        metrics["pred_rew/mean"] = rew.mean()
+        metrics["pred_rew/std"] = rew.std()
+
+        return metrics
 
 
 class VFunction(eqx.Module):
@@ -325,7 +353,7 @@ class VFunction(eqx.Module):
         for t in reversed(range(disc.shape[1])):
             rets.append(interm[:, t] + disc[:, t] * lam * rets[-1])
         ret = jnp.stack(list(reversed(rets))[:-1], 1)
-        return rew, ret, tarval, critic, slowcritic
+        return rew, ret, tarval, val, critic, slowcritic
 
     def replay_critic_loss(self, traj, ret, update=True):
         losses = {}
@@ -361,4 +389,4 @@ class VFunction(eqx.Module):
                 * replay_critic.log_prob(sg(replay_slowcritic.mean()))
             )[:, :-1]
         )
-        return losses
+        return losses, replay_ret

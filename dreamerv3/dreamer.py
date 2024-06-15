@@ -6,6 +6,7 @@ from . import behaviors
 from .models import WorldModel
 from jax.tree_util import tree_map
 from .dreamerutils import SlowUpdater
+from .dreamerutils import tensorstats
 
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
@@ -111,7 +112,7 @@ class DreamerV3:
     def loss(self, modules, key, carry, data):
         losses = {}
         metrics = {}
-        wm_loss_key, ac_loss_key = random.split(key, num=2)
+        key, wm_loss_key, ac_loss_key = random.split(key, num=3)
         wm_losses, (wm_carry, wm_outs, wm_metrics) = modules["wm"].loss(
             wm_loss_key, carry, data
         )  # using wm_carry is available at the mode of 'last' mode. it will be added after few weeks.
@@ -142,16 +143,22 @@ class DreamerV3:
         metrics.update(ac_metrics)
 
         if self.config.replay_critic_loss:
+            key, replay_ret_key = random.split(key, num=2)
             ret = losses.pop("ret")
             data_with_wm_outs = {**data, **wm_outs}
-            replay_critic_loss = (
+            replay_critic_loss, replay_ret = (
                 modules["task_behavior"]
                 .ac.critic["extr"]
                 .replay_critic_loss(data_with_wm_outs, ret)
             )
             losses.update(replay_critic_loss)
+            metrics.update(tensorstats(replay_ret_key, replay_ret, "replay_ret"))
+
+        metrics.update({f'{k}_loss': v.mean() for k, v in losses.items()})
+        metrics.update({f'{k}_loss_std': v.std() for k, v in losses.items()})
 
         scaled_losses = {k: v * self.scales[k] for k, v in losses.items()}
         loss = jnp.stack([v.mean() for v in scaled_losses.values()]).sum()
+        
 
         return loss, (scaled_losses, metrics)

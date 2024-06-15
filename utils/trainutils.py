@@ -1,10 +1,7 @@
-import jax
 import tqdm
 import equinox as eqx
 from jax import random
-import jax.numpy as jnp
 from dreamerv3.replay import defragmenter, pushstep, sampler
-
 
 # rollout_fn
 #   - interaction_fn: interacting with jax environment
@@ -40,10 +37,9 @@ def rollout_fn(
             state["rb_state"] = defragmenter(state["rb_state"])
 
         if idx % replay_ratio == 0:
-            state, lossval = train_agent_fn(
+            state, lossval, loss_and_info = train_agent_fn(
                 agent_fn, env_fn, opt_fn, env_params=env_params, **state
             )
-            print(lossval)
 
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
 
@@ -115,7 +111,7 @@ def train_agent_fn(
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
-    }, total_loss
+    }, total_loss, loss_and_info
 
 
 # prefill_fn

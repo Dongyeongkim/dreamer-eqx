@@ -1,4 +1,8 @@
 import os
+os.environ['XLA_FLAGS'] = (
+'--xla_gpu_enable_async_collectives=true '
+'--xla_gpu_enable_latency_hiding_scheduler=true '
+'--xla_gpu_enable_highest_priority_async_stream=true ')
 import hydra
 import ml_collections
 
@@ -13,6 +17,7 @@ def main(cfg):
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
     import jax
     from jax import random
 
@@ -40,7 +45,7 @@ def main(cfg):
     dreamer_state = dreamer.policy_initial(dreamer_modules, config.env.num_envs)
 
     print("Building the agent is now done...")
-    print("ReplayBuffer generation")
+    print("ReplayBuffer is generating")
 
     rb_state = generate_replaybuffer(
         buffer_size=config.rb_size,
@@ -58,6 +63,8 @@ def main(cfg):
         batch_length=config.batch_length,
         num_env=config.env.num_envs,
     )
+
+    print("ReplayBuffer has set up")
 
     print("Prefilling steps...")
 
