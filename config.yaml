@@ -33,7 +33,7 @@ seed: 0
 gpu_id: 0
 lr: 4e-5
 rb_size: 1e6
-batch_size: 64
+batch_size: 16
 batch_length: 65 
 replay_ratio: 32
 agent:
@@ -59,7 +59,7 @@ agent:
 env:
   env_name: Craftax-Classic-Pixels-v1
   autoreset: true
-  num_envs: 64
+  num_envs: 16
 hydra:
   run:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_rssm_detersize_${rssm.deter}

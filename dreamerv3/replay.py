@@ -92,10 +92,12 @@ def defragmenter(buffer_state):
         buffer_state.chunk_size_dict,
     )
     if len(buffer_state.buffer.keys()) == 0:
+        prechunk = putarray(prechunk, jax.devices("cpu")[0])
         buffer_state.buffer = prechunk
         return buffer_state
 
     else:
+        prechunk = putarray(prechunk, jax.devices("cpu")[0])
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
 
     return buffer_state
@@ -114,23 +116,20 @@ def sampler(key, buffer_state, device=None):
         buffer_state.batch_size_dict,
         buffer_state.batch_length_dict,
     )
-    batched = poparray(batched, jax.devices()[0] if device is None else device)
+    batched = putarray(batched, jax.devices()[0] if device is None else device)
     return batched
 
 
 def tree_stack(trees):
-    return jax.device_put(
-        tree_map(lambda *v: jnp.stack(v), *trees), device=jax.devices("cpu")[0]
-    )
+    return tree_map(lambda *v: jnp.stack(v), *trees)
 
 
 def tree_concat(trees):
-    return jax.device_put(
-        tree_map(lambda *v: jnp.concatenate(v), *trees), device=jax.devices("cpu")[0]
-    )
+    return tree_map(lambda *v: jnp.concatenate(v), *trees)
+    
 
 
-def poparray(data, device):
+def putarray(data, device):
     return jax.device_put(data, device)
 
 
