@@ -76,7 +76,7 @@ class DreamerV3:
             state = ((latent, outs["action"]), task_state, expl_state)
         else:
             raise NotImplementedError
-        return modules, state, outs
+        return state, outs
 
     def train(self, modules, key, carry, data, opt, opt_state):
         context_data = data.copy()

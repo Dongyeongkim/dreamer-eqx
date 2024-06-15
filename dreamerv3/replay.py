@@ -21,7 +21,7 @@ class ReplayBuffer:
     batch_length: int
     num_env_size: int
     buffer_size: int
-    input_pytreedef: chex.PyTreeDef
+    input_pytreedef: dict
     chunk_size_dict: dict
     batch_size_dict: dict
     batch_length_dict: dict

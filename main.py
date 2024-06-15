@@ -29,13 +29,13 @@ def main(cfg):
 
     print(f"Setup the environments...")
 
-    first_obs, env_state = env.reset(reset_key, env_params)
+    env_state, obs = env.reset(reset_key, env_params)
 
     print(f"Setting the environments is now done...")
     print("Building the agent...")
 
     key, dreamer_key = jax.random.split(key)
-    dreamer, dreamer_modules = make_dreamer(env, config, dreamer_key)
+    dreamer, dreamer_modules, opt_fn, opt_state = make_dreamer(env, config, dreamer_key)
     # need to add optimiser state; which is from the optimiser side
     dreamer_state = dreamer.policy_initial(dreamer_modules, config.env.num_envs)
 
@@ -67,7 +67,7 @@ def main(cfg):
         1040,
         dreamer,
         env,
-        None,
+        opt_fn,
         dreamer_modules,
         dreamer_state,
         env_params,
