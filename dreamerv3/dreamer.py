@@ -1,9 +1,11 @@
 import jax
+import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from . import behaviors
 from .models import WorldModel
 from jax.tree_util import tree_map
+from .dreamerutils import SlowUpdater
 
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
@@ -26,6 +28,7 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
         "wm": wm,
         "task_behavior": task_behavior,
         "expl_behavior": expl_behavior,
+        "updater": SlowUpdater(),
     }
 
 
@@ -90,6 +93,22 @@ class DreamerV3:
         modules, opt_state, total_loss, loss_and_info = opt.update(
             key, opt_state, self.loss, modules, carry, data
         )
+        
+        # slow update for critic
+
+        critic = eqx.filter(
+            modules["task_behavior"].ac.critic["extr"].net, eqx.is_array
+        )
+        slowcritic, slowcritic_static = eqx.partition(
+            modules["task_behavior"].ac.critic["extr"].slow, eqx.is_array
+        )
+        ema_slowcritic = modules["updater"](critic, slowcritic)
+        modules["task_behavior"].ac.critic["extr"] = eqx.tree_at(
+            lambda mod: mod.slow,
+            modules["task_behavior"].ac.critic["extr"],
+            eqx.combine(ema_slowcritic, slowcritic_static),
+        )
+
         return modules, total_loss, loss_and_info, opt_state
 
     def loss(self, modules, key, carry, data):

@@ -580,7 +580,7 @@ class TwoHotDist:
 class SlowUpdater(eqx.Module):
     period: int
     fraction: float
-    updates: int = eqx.field()
+    updates: jax.Array = eqx.field(converter=jax.numpy.asarray)
 
     def __init__(self, fraction=1.0, period=1):
         self.fraction = fraction
@@ -593,7 +593,7 @@ class SlowUpdater(eqx.Module):
         need_update = updates % self.period == 0
         mix = jnp.clip(1.0 * need_init + self.fraction * need_update, 0, 1)
         ema = tree_map(lambda s, d: mix * s + (1 - mix) * d, src, dst)
-        self.updates = updates + 1
+        self = eqx.tree_at(lambda updates: updates, self, updates+1)
         return ema
 
 

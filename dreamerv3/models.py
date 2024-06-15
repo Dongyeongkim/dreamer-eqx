@@ -295,7 +295,6 @@ class VFunction(eqx.Module):
     net: eqx.Module
     slow: eqx.Module
     valnorm: eqx.Module
-    updater: eqx.Module
     rewfn: Callable
     config: FrozenConfigDict
 
@@ -304,7 +303,6 @@ class VFunction(eqx.Module):
         self.net = MLP(net_key, out_shape=(), **config.agent.critic)
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
         self.valnorm = Moments(**config.agent.valnorm)
-        self.updater = eqx.nn.Identity()
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 
