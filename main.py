@@ -1,22 +1,28 @@
-import os
-os.environ['XLA_FLAGS'] = (
-'--xla_gpu_enable_async_collectives=true '
-'--xla_gpu_enable_latency_hiding_scheduler=true '
-'--xla_gpu_enable_highest_priority_async_stream=true ')
 import hydra
-import ml_collections
-
-from utils.envutils import make_craftax_env
-from utils.agentutils import make_dreamer
-from utils.trainutils import rollout_fn, prefill_fn
-from dreamerv3.replay import generate_replaybuffer
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg):
+    import os
+
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_simplify_all_fp_conversions"
+        "--xla_gpu_enable_async_all_reduce=true"
+        "--xla_gpu_enable_async_all_gather=true"
+        "--xla_gpu_enable_async_collectives=true "
+        "--xla_gpu_enable_async_reduce_scatter=true"
+        
+    )
+
+    import ml_collections
+
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+    from utils.envutils import make_craftax_env
+    from utils.agentutils import make_dreamer
+    from utils.trainutils import prefill_fn, train_and_evaluate_fn
+    from dreamerv3.replay import generate_replaybuffer
 
     import jax
     from jax import random
@@ -52,12 +58,12 @@ def main(cfg):
         desired_key_dim={
             "deter": (config.rssm.deter,),
             "stoch": (config.rssm.latent_dim, config.rssm.latent_cls),
-            "observation": (63, 63, 3),
+            "observation": env.observation_space(env_params).shape,
             "reward": (),
             "is_first": (),
             "is_last": (),
             "is_terminal": (),
-            "action": (17,),
+            "action": (env.action_space(env_params).n,),
         },
         batch_size=config.batch_size,
         batch_length=config.batch_length,
@@ -84,9 +90,9 @@ def main(cfg):
     )
     print("Prefilled!")
     key, training_key = jax.random.split(key)
-    state = rollout_fn(
+    state = train_and_evaluate_fn(
         key=training_key,
-        num_steps=65*30,
+        num_steps=65 * 30,
         defrag_ratio=65,
         replay_ratio=32,
         agent_fn=dreamer,
@@ -97,9 +103,8 @@ def main(cfg):
         env_params=env_params,
         env_state=env_state,
         opt_state=opt_state,
-        rb_state=rb_state)
-    
-    breakpoint()
+        rb_state=rb_state,
+    )
 
 
 if __name__ == "__main__":

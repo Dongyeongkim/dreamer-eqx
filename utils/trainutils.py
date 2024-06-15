@@ -8,7 +8,7 @@ from dreamerv3.replay import defragmenter, pushstep, sampler
 #   - train_wm_fn: training wm with function
 
 
-def rollout_fn(
+def train_and_evaluate_fn(
     key,
     num_steps,
     defrag_ratio,
@@ -45,6 +45,36 @@ def rollout_fn(
 
     return state
 
+# prefill_fn
+#   - interaction_fn: only interactions to fill replay buffer
+
+
+def prefill_fn(
+    key,
+    num_steps,
+    agent_fn,
+    env_fn,
+    opt_fn,
+    agent_modules,
+    agent_state,
+    env_params,
+    env_state,
+    opt_state,
+    rb_state,
+):
+    state = {
+        "key": key,
+        "agent_modules": agent_modules,
+        "agent_state": agent_state,
+        "opt_state": opt_state,
+        "env_state": env_state,
+        "rb_state": rb_state,
+    }
+
+    for _ in tqdm.tqdm(range(num_steps)):
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
+
+    return state["rb_state"]
 
 def interaction_fn(
     agent_fn,
@@ -114,33 +144,4 @@ def train_agent_fn(
     }, total_loss, loss_and_info
 
 
-# prefill_fn
-#   - interaction_fn: only interactions to fill replay buffer
 
-
-def prefill_fn(
-    key,
-    num_steps,
-    agent_fn,
-    env_fn,
-    opt_fn,
-    agent_modules,
-    agent_state,
-    env_params,
-    env_state,
-    opt_state,
-    rb_state,
-):
-    state = {
-        "key": key,
-        "agent_modules": agent_modules,
-        "agent_state": agent_state,
-        "opt_state": opt_state,
-        "env_state": env_state,
-        "rb_state": rb_state,
-    }
-
-    for _ in tqdm.tqdm(range(num_steps)):
-        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-
-    return state["rb_state"]
