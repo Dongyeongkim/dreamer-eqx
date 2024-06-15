@@ -33,6 +33,8 @@ def rollout_fn(
     }
 
     for idx in tqdm.tqdm(range(num_steps)):
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
+        
         if idx % defrag_ratio == 0:
             state["rb_state"] = defragmenter(state["rb_state"])
 
@@ -40,8 +42,6 @@ def rollout_fn(
             state, lossval, loss_and_info = train_agent_fn(
                 agent_fn, env_fn, opt_fn, env_params=env_params, **state
             )
-
-        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
 
     return state
 
