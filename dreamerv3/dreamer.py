@@ -33,14 +33,11 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
 
 
 class DreamerV3:
-    def __init__(self, key, obs_space, act_space, step=0, config=None):
+    def __init__(self, obs_space, act_space, config=None):
         self.config = config
         self.obs_space = obs_space
         self.act_space = act_space
-        self.step = step
         self.scales = self.config.loss_scales
-        # self.opt = Optimizer(lr=self.config.lr)
-        # self.opt_state = self.opt.init(self.modules)
 
     def policy_initial(self, modules, batch_size):
         return (
