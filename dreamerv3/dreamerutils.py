@@ -583,9 +583,9 @@ class SlowUpdater(eqx.Module):
     updates: jax.Array = eqx.field(converter=jax.numpy.asarray)
 
     def __init__(self, fraction=1.0, period=1):
-        self.fraction = fraction
-        self.period = period
-        self.updates = 0
+        self.fraction = jnp.float32(fraction)
+        self.period = jnp.int32(period)
+        self.updates = jnp.int32(0)
 
     def __call__(self, src: PyTree, dst: PyTree):
         updates = self.updates
@@ -593,7 +593,7 @@ class SlowUpdater(eqx.Module):
         need_update = updates % self.period == 0
         mix = jnp.clip(1.0 * need_init + self.fraction * need_update, 0, 1)
         ema = tree_map(lambda s, d: mix * s + (1 - mix) * d, src, dst)
-        self = eqx.tree_at(lambda updates: updates, self, updates+1)
+        self = eqx.tree_at(lambda updates: updates, self, updates + 1)
         return ema
 
 

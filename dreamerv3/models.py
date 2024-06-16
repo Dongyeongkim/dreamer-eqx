@@ -86,26 +86,22 @@ class WorldModel(eqx.Module):
             else:
                 feat = get_feat(outs)
                 dist = head(feat)
-                if log_name == "cont":
-                    if self.config.contdisc:
-                        softlabel = (1 - jnp.float32(data["is_terminal"])) * (
-                            1 - 1 / self.config.discount_horizon
-                        )
-                        losses.update(
-                            {log_name: -dist.log_prob(softlabel.astype("float32"))}
-                        )
-                    else:
-                        losses.update(
-                            {
-                                log_name: -dist.log_prob(
-                                    data[data_name].astype("float32")
-                                )
-                            }
-                        )
+            if log_name == "cont":
+                if self.config.contdisc:
+                    softlabel = (1 - jnp.float32(data["is_terminal"])) * (
+                        1 - 1 / self.config.discount_horizon
+                    )
+                    losses.update(
+                        {log_name: -dist.log_prob(softlabel.astype("float32"))}
+                    )
                 else:
                     losses.update(
                         {log_name: -dist.log_prob(data[data_name].astype("float32"))}
                     )
+            else:
+                losses.update(
+                    {log_name: -dist.log_prob(data[data_name].astype("float32"))}
+                )
         metrics.update(self._metrics(data))
         return losses, (carry, outs, metrics)
 
@@ -308,7 +304,7 @@ class ImagActorCritic(eqx.Module):
         metrics.update(
             tensorstats(ret_normed_key, (ret - roffset) / rscale, "ret_normed")
         )
-        
+
         metrics["td_error"] = jnp.abs(ret - val[:, :-1]).mean()
         metrics["ret_rate"] = (jnp.abs(ret) > 1.0).mean()
 
