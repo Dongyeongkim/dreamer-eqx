@@ -1,6 +1,6 @@
 
 encoder: {channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms,
-  winit: normal, outer: true, kernel_size: 5, stride: 2, minres: 6, cdtype: bfloat16}
+  winit: normal, outer: true, kernel_size: 5, stride: 2, minres: 4, cdtype: bfloat16}
 
 rssm: {deter: 4096, hidden: 512, latent_dim: 32, latent_cls: 32, channel_depth: 32,
   channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms, unimix: 0.01, outscale: 1.0,
@@ -9,7 +9,7 @@ rssm: {deter: 4096, hidden: 512, latent_dim: 32, latent_cls: 32, channel_depth: 
 
 decoder: {deter: 4096, channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], latent_dim: 32,
   latent_cls: 32, num_units: 512, act: silu, norm: rms, winit: normal, outer: true, kernel_size: 5,
-  stride: 2, minres: 6, use_sigmoid: true, cdtype: bfloat16}
+  stride: 2, minres: 4, use_sigmoid: true, cdtype: bfloat16}
 
 reward_head: {num_layers: 1, in_features: 5120, num_units: 512, act: silu, norm: rms, dist: symexp_twohot,
   outscale: 0.0, winit: normal, cdtype: bfloat16}
@@ -36,6 +36,8 @@ rb_size: 1e6
 batch_size: 16
 batch_length: 65 
 replay_ratio: 32
+num_interaction_steps: 62500
+
 agent:
   task_behavior: Greedy
   expl_behavior: None

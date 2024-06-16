@@ -145,13 +145,18 @@ class OptimisticResetVecEnvWrapper(GymnaxWrapper):
 
 
 class CraftaxWrapper(GymnaxWrapper):
-    def __init__(self, env):
+    def __init__(self, env, shape=(64, 64)):
+        self._shape = shape
         super().__init__(env)
 
     def reset(self, rng, params=None):
         obs, env_state = self._env.reset(rng, params)
         return env_state, {
-            "observation": obs,
+            "observation": jax.image.resize(
+                obs,
+                (obs.shape[0], self._shape[0], self._shape[1], obs.shape[3]),
+                "nearest",
+            ),
             "reward": jnp.zeros((self.num_envs,)),
             "is_first": jnp.bool(jnp.ones((self.num_envs,))),
             "is_last": jnp.bool(jnp.zeros((self.num_envs,))),
@@ -163,7 +168,11 @@ class CraftaxWrapper(GymnaxWrapper):
             rng, env_state, action, params
         )
         return env_state, {
-            "observation": obs,
+            "observation": jax.image.resize(
+                obs,
+                (obs.shape[0], self._shape[0], self._shape[1], obs.shape[3]),
+                "nearest",
+            ),
             "reward": reward,
             "is_first": jnp.bool(jnp.maximum(env_state.timestep, 0)),
             "is_last": done,
