@@ -87,7 +87,7 @@ def main(cfg):
     key, training_key = jax.random.split(key)
     state = train_and_evaluate_fn(
         key=training_key,
-        num_steps=config.num_interaction_step,
+        num_steps=config.num_interaction_steps,
         defrag_ratio=65,
         replay_ratio=32,
         logger=logger,
