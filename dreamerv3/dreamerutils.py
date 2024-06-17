@@ -215,11 +215,11 @@ def add_colour_frame(image, colour):
 
 
 def symlog(x):
-    return jnp.sign(x) * jnp.log(jnp.abs(x) + 1)
+    return jnp.sign(x) * jnp.log1p(jnp.abs(x))
 
 
 def symexp(x):
-    return jnp.sign(x) * (jnp.exp(jnp.abs(x)) - 1)
+    return jnp.sign(x) * jnp.expm1(jnp.abs(x))
 
 
 # reset
@@ -568,7 +568,7 @@ class TwoHotDist:
         above = len(self.bins) - (self.bins > x[..., None]).astype("int32").sum(-1)
         below = jnp.clip(below, 0, len(self.bins) - 1)
         above = jnp.clip(above, 0, len(self.bins) - 1)
-        equal = below == above
+        equal = (below == above)
         dist_to_below = jnp.where(equal, 1, jnp.abs(self.bins[below] - x))
         dist_to_above = jnp.where(equal, 1, jnp.abs(self.bins[above] - x))
         total = dist_to_below + dist_to_above

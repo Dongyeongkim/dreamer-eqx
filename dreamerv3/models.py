@@ -121,11 +121,12 @@ class WorldModel(eqx.Module):
         policy_key, policy_start_key = random.split(policy_key, num=2)
         startlat["key"] = wm_key
         startlat["policy_key"] = policy_key
-        startlat["action"] = policy(policy_start_key, startout)
+        startlat["action"] = sg(policy(policy_start_key, startout))
 
         def step(prev, _):
             prev = prev.copy()
             carry, _ = self.rssm.img_step(prev, prev.pop("action"))
+            carry["stoch"] = sg(carry["stoch"])
             policy_key, partial_key = random.split(prev["policy_key"], num=2)
             action = policy(partial_key, carry)
             return {**carry, "policy_key": policy_key, "action": action}, {
@@ -250,17 +251,29 @@ class ImagActorCritic(eqx.Module):
     def loss(self, key, imagine, start, update=True):
         losses = {}
         metric_key, imagine_key = random.split(key, num=2)
-        policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
+        policy = lambda k, s: self.actor(get_feat(s)).sample(seed=k)
 
         traj = imagine(imagine_key, policy, start, self.config.agent.imag_horizon)
+        traj["action"] = sg(traj["action"])
+        actor = self.actor(get_feat(traj))
         rew, ret, tarval, val, critic, slowcritic = self.critic["extr"].score(traj)
 
-        voffset, vscale = self.critic["extr"].valnorm(ret, update)
         roffset, rscale = self.retnorm(ret, update)
         adv = (ret - tarval[:, :-1]) / rscale
         aoffset, ascale = self.advnorm(adv, update)
         adv_normed = (adv - aoffset) / ascale
+        logpi = actor.log_prob(sg(jnp.float32(traj["action"])))[
+            :, :-1
+        ]  # this part has been changed; it is same as ninjax dreamerv3, but does not support multi actors
+        ents = actor.entropy()[
+            :, :-1
+        ]  # this part has been changed also for same reason
 
+        losses["actor"] = sg(traj["weight"][:, :-1]) * (
+            -1.*logpi * sg(adv_normed) - self.config.agent.actent * ents.sum()
+        )  # this part also has been changed; will be same btw
+
+        voffset, vscale = self.critic["extr"].valnorm(ret, update)
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["critic"] = (
@@ -270,19 +283,7 @@ class ImagActorCritic(eqx.Module):
                 + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
             )[:, :-1]
         )
-
-        actor = self.actor(get_feat(traj))
-        logpi = actor.log_prob(sg(traj["action"]))[
-            :, :-1
-        ]  # this part has been changed; it is same as ninjax dreamerv3, but does not support multi actors
-        ents = actor.entropy()[
-            :, :-1
-        ]  # this part has been changed also for same reason
-
-        losses["actor"] = sg(traj["weight"][:, :-1]) * -(
-            logpi * sg(adv_normed) + self.config.agent.actent * ents
-        )  # this part also has been changed; will be same btw
-
+        
         if self.config.replay_critic_loss:
             losses["ret"] = ret
 
