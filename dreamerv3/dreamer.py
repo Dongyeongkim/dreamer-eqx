@@ -153,7 +153,8 @@ class DreamerV3:
             )
             losses.update(replay_critic_loss)
             metrics.update(tensorstats(replay_ret_key, replay_ret, "replay_ret"))
-
+        
+        losses = {k: v.sum(-1) for k, v in losses.items()}
         metrics.update({f'{k}_loss': v.mean() for k, v in losses.items()})
         metrics.update({f'{k}_loss_std': v.std() for k, v in losses.items()})
 

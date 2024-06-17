@@ -253,7 +253,6 @@ class ImagActorCritic(eqx.Module):
         policy = lambda k, s: self.actor(sg(get_feat(s))).sample(seed=k)
 
         traj = imagine(imagine_key, policy, start, self.config.agent.imag_horizon)
-        traj = {k: sg(v) for k, v in traj.items()}
         rew, ret, tarval, val, critic, slowcritic = self.critic["extr"].score(traj)
 
         voffset, vscale = self.critic["extr"].valnorm(ret, update)
@@ -265,7 +264,7 @@ class ImagActorCritic(eqx.Module):
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["critic"] = (
-            traj["weight"][:, :-1]
+            sg(traj["weight"][:, :-1])
             * -(
                 critic.log_prob(sg(ret_padded))
                 + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
@@ -280,7 +279,7 @@ class ImagActorCritic(eqx.Module):
             :, :-1
         ]  # this part has been changed also for same reason
 
-        losses["actor"] = traj["weight"][:, :-1] * -(
+        losses["actor"] = sg(traj["weight"][:, :-1]) * -(
             logpi * sg(adv_normed) + self.config.agent.actent * ents
         )  # this part also has been changed; will be same btw
 
