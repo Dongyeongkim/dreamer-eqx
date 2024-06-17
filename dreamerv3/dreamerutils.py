@@ -295,13 +295,17 @@ def eqx_adaptive_grad_clip(clipping: float, eps: float = 1e-3):
         if params is None:
             raise ValueError(base.NO_PARAMS_MSG)
         params = eqx.filter(params, eqx.is_array)  # parameter filtering for eqx module
-        g_norm, p_norm = jax.tree_util.tree_map(unitwise_norm, (updates, params))
+        g_norm, p_norm = jax.tree_util.tree_map(
+            unitwise_norm, (updates, params)
+        )
         # Maximum allowable norm.
         max_norm = jax.tree_util.tree_map(
             lambda x: clipping * jnp.maximum(x, eps), p_norm
         )
         # If grad norm > clipping * param_norm, rescale.
-        updates = jax.tree_util.tree_map(unitwise_clip, g_norm, max_norm, updates)
+        updates = jax.tree_util.tree_map(
+            unitwise_clip, g_norm, max_norm, updates
+        )
         return updates, state
 
     return base.GradientTransformation(init_fn, update_fn)
@@ -320,7 +324,10 @@ def scale_by_rms(beta=0.999, eps=1e-8):
         step, nu = state
         step = optax.safe_int32_increment(step)
         nu = jax.tree_util.tree_map(
-            lambda v, u: beta * v + (1 - beta) * (u * u), nu, updates
+            lambda v, u: beta * v + (1 - beta) * (u * u) if u is not None else None,
+            nu,
+            updates,
+            is_leaf=lambda x: x is None,
         )
         nu_hat = optax.bias_correction(nu, beta, step)
         updates = jax.tree_util.tree_map(
