@@ -100,7 +100,7 @@ class DreamerV3:
         slowcritic, slowcritic_static = eqx.partition(
             modules["task_behavior"].ac.critic["extr"].slow, eqx.is_array
         )
-        ema_slowcritic = modules["updater"](critic, slowcritic)
+        modules["updater"], ema_slowcritic = modules["updater"](critic, slowcritic)
         modules["task_behavior"].ac.critic["extr"] = eqx.tree_at(
             lambda mod: mod.slow,
             modules["task_behavior"].ac.critic["extr"],
