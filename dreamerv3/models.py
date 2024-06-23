@@ -226,9 +226,6 @@ class WorldModel(eqx.Module):
 class ImagActorCritic(eqx.Module):
     actor: eqx.Module
     critic: eqx.Module
-    retnorm: eqx.Module
-    advnorm: eqx.Module
-
     config: FrozenConfigDict
 
     def __init__(self, key, critics, scales, act_space, config):
@@ -238,8 +235,6 @@ class ImagActorCritic(eqx.Module):
             out_shape=(act_space,) if isinstance(act_space, int) else act_space,
         )
         self.critic = critics
-        self.retnorm = Moments(**config.agent.retnorm)
-        self.advnorm = Moments(**config.agent.advnorm)
         self.config = FrozenConfigDict(config)
 
     def initial(self, batch_size):
@@ -248,7 +243,7 @@ class ImagActorCritic(eqx.Module):
     def policy(self, carry, latent):
         return carry, {"action": self.actor(get_feat(latent))}
 
-    def loss(self, key, imagine, start, update=True):
+    def loss(self, key, norms, imagine, start, update=True):
         losses = {}
         metric_key, imagine_key = random.split(key, num=2)
         policy = lambda k, s: self.actor(get_feat(s)).sample(seed=k)
@@ -256,11 +251,12 @@ class ImagActorCritic(eqx.Module):
         traj = imagine(imagine_key, policy, start, self.config.agent.imag_horizon)
         traj["action"] = sg(traj["action"])
         actor = self.actor(get_feat(traj))
-        rew, ret, tarval, val, critic, slowcritic = self.critic["extr"].score(traj)
-
-        roffset, rscale = self.retnorm(ret, update)
+        rew, ret, tarval, val, critic, slowcritic = self.critic["extr"].score(
+            norms["valnorm"], traj
+        )
+        norms["retnorm"], (roffset, rscale) = norms["retnorm"](ret, update)
         adv = (ret - tarval[:, :-1]) / rscale
-        aoffset, ascale = self.advnorm(adv, update)
+        norms["advnorm"], (aoffset, ascale) = norms["advnorm"](adv, update)
         adv_normed = (adv - aoffset) / ascale
         logpi = actor.log_prob(sg(jnp.float32(traj["action"])))[
             :, :-1
@@ -268,12 +264,11 @@ class ImagActorCritic(eqx.Module):
         ents = actor.entropy()[
             :, :-1
         ]  # this part has been changed also for same reason
-
-        losses["actor"] = sg(traj["weight"][:, :-1]) * (
-            -1.*logpi * sg(adv_normed) - self.config.agent.actent * ents.sum()
+        
+        losses["actor"] = sg(traj["weight"][:, :-1]) * -(
+            logpi * sg(adv_normed) + self.config.agent.actent * ents
         )  # this part also has been changed; will be same btw
-
-        voffset, vscale = self.critic["extr"].valnorm(ret, update)
+        norms["valnorm"], (voffset, vscale) = norms["valnorm"](ret, update)
         ret_normed = (ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["critic"] = (
@@ -283,13 +278,13 @@ class ImagActorCritic(eqx.Module):
                 + self.config.agent.slowreg * critic.log_prob(sg(slowcritic.mean()))
             )[:, :-1]
         )
-        
+
         if self.config.replay_critic_loss:
             losses["ret"] = ret
 
         metrics = self._metrics(metric_key, adv, rew, val, ret, roffset, rscale, traj)
 
-        return losses, metrics
+        return losses, norms, metrics
 
     def _metrics(self, key, adv, rew, val, ret, roffset, rscale, traj):
         metrics = {}
@@ -318,7 +313,6 @@ class ImagActorCritic(eqx.Module):
 class VFunction(eqx.Module):
     net: eqx.Module
     slow: eqx.Module
-    valnorm: eqx.Module
     rewfn: Callable
     config: FrozenConfigDict
 
@@ -326,17 +320,17 @@ class VFunction(eqx.Module):
         net_key, slow_key = random.split(key, num=2)
         self.net = MLP(net_key, out_shape=(), **config.agent.critic)
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
-        self.valnorm = Moments(**config.agent.valnorm)
+        # self.valnorm = Moments(**config.agent.valnorm)
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 
-    def score(self, traj, actor=None):
+    def score(self, valnorm, traj, actor=None):
         rew = jnp.concatenate([traj["startrew"][:, None], self.rewfn(traj)], 1)
         _ = traj.pop("startrew")
 
         critic = self.net(get_feat(traj))
         slowcritic = self.slow(get_feat(traj))
-        voffset, vscale = self.valnorm.stats()
+        voffset, vscale = valnorm.stats()
         val = critic.mean() * vscale + voffset
         slowval = slowcritic.mean() * vscale + voffset
         tarval = slowval if self.config.agent.slowtar else val
@@ -351,7 +345,7 @@ class VFunction(eqx.Module):
         ret = jnp.stack(list(reversed(rets))[:-1], 1)
         return rew, ret, tarval, val, critic, slowcritic
 
-    def replay_critic_loss(self, traj, ret, update=True):
+    def replay_critic_loss(self, norms, traj, ret, update=True):
         losses = {}
         replay_critic = self.net(
             get_feat(traj) if self.config.replay_critic_grad else sg(get_feat(traj))
@@ -374,7 +368,7 @@ class VFunction(eqx.Module):
         for t in reversed(range(live.shape[1])):
             rets.append(interm[:, t] + live[:, t] * cont[:, t] * rets[-1])
         replay_ret = jnp.stack(list(reversed(rets))[:-1], 1)
-        voffset, vscale = self.valnorm(replay_ret, update)
+        norms["valnorm"], (voffset, vscale) = norms["valnorm"](replay_ret, update)
         ret_normed = (replay_ret - voffset) / vscale
         ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
         losses["replay_critic"] = (
@@ -385,4 +379,4 @@ class VFunction(eqx.Module):
                 * replay_critic.log_prob(sg(replay_slowcritic.mean()))
             )[:, :-1]
         )
-        return losses, replay_ret
+        return losses, norms, replay_ret

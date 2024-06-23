@@ -2,7 +2,7 @@ import os
 
 # os.environ["MUJOCO_GL"] = "egl"
 # os.environ["MUJOCO_RENDERER"] = "egl"
-# Currently disabled due to system does not fit the setting 
+# Currently disabled due to system does not fit the setting
 
 from craftax.craftax_env import make_craftax_env_from_name
 from envs.wrappers.craftax_wrapper import (

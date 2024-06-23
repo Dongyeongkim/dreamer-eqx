@@ -35,7 +35,7 @@ def train_and_evaluate_fn(
 
     for idx in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-        
+
         if idx % defrag_ratio == 0:
             state["rb_state"] = defragmenter(state["rb_state"])
 
@@ -44,9 +44,10 @@ def train_and_evaluate_fn(
                 agent_fn, env_fn, opt_fn, env_params=env_params, **state
             )
             if idx % 2 * replay_ratio == 0:
-                logger._write(loss_and_info[1], 16*idx)
+                logger._write(loss_and_info[1], 16 * idx)
 
     return state
+
 
 # prefill_fn
 #   - interaction_fn: only interactions to fill replay buffer
@@ -78,6 +79,7 @@ def prefill_fn(
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
 
     return state["rb_state"]
+
 
 def interaction_fn(
     agent_fn,
@@ -137,14 +139,15 @@ def train_agent_fn(
         opt_fn,
         opt_state,
     )
-    return {
-        "key": key,
-        "agent_modules": agent_modules,
-        "agent_state": agent_state,
-        "opt_state": opt_state,
-        "env_state": env_state,
-        "rb_state": rb_state,
-    }, total_loss, loss_and_info
-
-
-
+    return (
+        {
+            "key": key,
+            "agent_modules": agent_modules,
+            "agent_state": agent_state,
+            "opt_state": opt_state,
+            "env_state": env_state,
+            "rb_state": rb_state,
+        },
+        total_loss,
+        loss_and_info,
+    )

@@ -11,15 +11,15 @@ from jax import numpy as jp
 
 class VecDmEnvWrapper(dm_env.Environment):
     def __init__(
-            self,
-            env: PipelineEnv,
-            step_limit: int = 1000,
-            seed: int = 0,
-            backend: Optional[str] = None,
-            num_env: int = 1,
-            width: int = 256,
-            height: int = 256,
-            use_image: bool = False,
+        self,
+        env: PipelineEnv,
+        step_limit: int = 1000,
+        seed: int = 0,
+        backend: Optional[str] = None,
+        num_env: int = 1,
+        width: int = 256,
+        height: int = 256,
+        use_image: bool = False,
     ):
         self._env = env
         self._step_limit = step_limit
@@ -54,9 +54,15 @@ class VecDmEnvWrapper(dm_env.Environment):
                 name="action",
             )
 
-        self._reward_spec = specs.Array(shape=(self.num_env,), dtype="float32", name="reward")
+        self._reward_spec = specs.Array(
+            shape=(self.num_env,), dtype="float32", name="reward"
+        )
         self._discount_spec = specs.BoundedArray(
-            shape=(self.num_env,), dtype="float32", minimum=0.0, maximum=1.0, name="discount"
+            shape=(self.num_env,),
+            dtype="float32",
+            minimum=0.0,
+            maximum=1.0,
+            name="discount",
         )
         if hasattr(self._env, "discount_spec"):
             self._discount_spec = self._env.discount_spec()
@@ -81,7 +87,10 @@ class VecDmEnvWrapper(dm_env.Environment):
             )
 
         self._step = jax.jit(step, backend=self.backend)
-        self.renderer = [mujoco.Renderer(self._env.sys.mj_model, height=height, width=width) for _ in range(num_env)]
+        self.renderer = [
+            mujoco.Renderer(self._env.sys.mj_model, height=height, width=width)
+            for _ in range(num_env)
+        ]
         self.axes = jp.arange(num_env).reshape(-1, 1)
 
     def reset(self):
@@ -143,10 +152,17 @@ class VecDmEnvWrapper(dm_env.Environment):
             return jax.numpy.array(rendered)
 
         def render_one(q, qd, i):
-            return jax.pure_callback(render_array,
-                                     jax.ShapeDtypeStruct((self.width, self.height, 3), "uint8"), i, q, qd)
+            return jax.pure_callback(
+                render_array,
+                jax.ShapeDtypeStruct((self.width, self.height, 3), "uint8"),
+                i,
+                q,
+                qd,
+            )
 
-        return jax.vmap(render_one)(states.pipeline_state.q, states.pipeline_state.qd, self.axes)
+        return jax.vmap(render_one)(
+            states.pipeline_state.q, states.pipeline_state.qd, self.axes
+        )
 
 
 if __name__ == "__main__":

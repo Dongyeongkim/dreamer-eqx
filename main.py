@@ -3,14 +3,14 @@ import hydra
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg):
-    
+
     import os
     import ml_collections
 
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
-    
+
     from utils.logger import Logger
     from utils.envutils import make_craftax_env
     from utils.agentutils import make_dreamer

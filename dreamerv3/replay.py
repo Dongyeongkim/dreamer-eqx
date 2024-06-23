@@ -126,7 +126,6 @@ def tree_stack(trees):
 
 def tree_concat(trees):
     return tree_map(lambda *v: jnp.concatenate(v), *trees)
-    
 
 
 def putarray(data, device):

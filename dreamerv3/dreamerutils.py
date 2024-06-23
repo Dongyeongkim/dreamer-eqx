@@ -125,12 +125,13 @@ class Optimizer(eqx.Module):
 
     @eqx.filter_jit
     def update(self, key, opt_state, lossfn, modules, carry, data):
-        (total_loss, loss_and_info), grads = eqx.filter_value_and_grad(
+        (total_loss, norms_and_loss_and_info), grads = eqx.filter_value_and_grad(
             lossfn, has_aux=True
         )(modules, key, carry, data)
+        modules["norms"] = norms_and_loss_and_info[0]
         updates, opt_state = self.chain.update(grads, opt_state, modules)
         modules = eqx.apply_updates(modules, updates)
-        return modules, opt_state, total_loss, loss_and_info
+        return modules, opt_state, total_loss, (norms_and_loss_and_info[1], norms_and_loss_and_info[2])
 
 
 # save and restore states
@@ -295,17 +296,13 @@ def eqx_adaptive_grad_clip(clipping: float, eps: float = 1e-3):
         if params is None:
             raise ValueError(base.NO_PARAMS_MSG)
         params = eqx.filter(params, eqx.is_array)  # parameter filtering for eqx module
-        g_norm, p_norm = jax.tree_util.tree_map(
-            unitwise_norm, (updates, params)
-        )
+        g_norm, p_norm = jax.tree_util.tree_map(unitwise_norm, (updates, params))
         # Maximum allowable norm.
         max_norm = jax.tree_util.tree_map(
             lambda x: clipping * jnp.maximum(x, eps), p_norm
         )
         # If grad norm > clipping * param_norm, rescale.
-        updates = jax.tree_util.tree_map(
-            unitwise_clip, g_norm, max_norm, updates
-        )
+        updates = jax.tree_util.tree_map(unitwise_clip, g_norm, max_norm, updates)
         return updates, state
 
     return base.GradientTransformation(init_fn, update_fn)
@@ -568,7 +565,7 @@ class TwoHotDist:
         above = len(self.bins) - (self.bins > x[..., None]).astype("int32").sum(-1)
         below = jnp.clip(below, 0, len(self.bins) - 1)
         above = jnp.clip(above, 0, len(self.bins) - 1)
-        equal = (below == above)
+        equal = below == above
         dist_to_below = jnp.where(equal, 1, jnp.abs(self.bins[below] - x))
         dist_to_above = jnp.where(equal, 1, jnp.abs(self.bins[above] - x))
         total = dist_to_below + dist_to_above
@@ -596,7 +593,6 @@ class SlowUpdater(eqx.Module):
 
     def __call__(self, src: PyTree, dst: PyTree):
         updates = self.updates
-        jax.debug.breakpoint()
         need_init = updates == 0
         need_update = updates % self.period == 0
         mix = jnp.clip(1.0 * need_init + self.fraction * need_update, 0, 1)
@@ -611,11 +607,11 @@ class Moments(eqx.Module):
     perclo: float = 5.0
     perchi: float = 95.0
 
-    mean: jnp.float32 = eqx.field()
-    sqrs: jnp.float32 = eqx.field()
-    corr: jnp.float32 = eqx.field()
-    low: jnp.float32 = eqx.field()
-    high: jnp.float32 = eqx.field()
+    mean: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    sqrs: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    corr: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    low: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    high: jax.Array = eqx.field(converter=jax.numpy.asarray)
 
     impl: str = eqx.static_field()
 
@@ -647,8 +643,11 @@ class Moments(eqx.Module):
             raise NotImplementedError(self.impl)
 
     def __call__(self, x, update=True):
-        update and self.update(x)
-        return self.stats()
+        if update:
+            module = self.update(x)
+        else:
+            module = self
+        return module, module.stats()
 
     def update(self, _x):
         x = sg(_x.astype("float32"))

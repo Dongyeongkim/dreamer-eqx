@@ -5,6 +5,7 @@ import jax.numpy as jnp
 from . import behaviors
 from .models import WorldModel
 from jax.tree_util import tree_map
+from .dreamerutils import Moments
 from .dreamerutils import SlowUpdater
 from .dreamerutils import tensorstats
 
@@ -29,6 +30,11 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
         "wm": wm,
         "task_behavior": task_behavior,
         "expl_behavior": expl_behavior,
+        "norms": {
+            "retnorm": Moments(**config.agent.retnorm),
+            "advnorm": Moments(**config.agent.advnorm),
+            "valnorm": Moments(**config.agent.valnorm),
+        },
         "updater": SlowUpdater(),
     }
 
@@ -91,7 +97,7 @@ class DreamerV3:
         modules, opt_state, total_loss, loss_and_info = opt.update(
             key, opt_state, self.loss, modules, carry, data
         )
-        
+
         # slow update for critic
 
         critic = eqx.filter(
@@ -136,8 +142,8 @@ class DreamerV3:
             "startrew": startrew,
             "startcon": startcon,
         }
-        ac_losses, ac_metrics = modules["task_behavior"].loss(
-            ac_loss_key, modules["wm"].imagine, start
+        ac_losses, modules["norms"], ac_metrics = modules["task_behavior"].loss(
+            ac_loss_key, modules["norms"], modules["wm"].imagine, start
         )
         losses.update(ac_losses)
         metrics.update(ac_metrics)
@@ -146,24 +152,22 @@ class DreamerV3:
             key, replay_ret_key = random.split(key, num=2)
             ret = losses.pop("ret")
             data_with_wm_outs = {**data, **wm_outs}
-            replay_critic_loss, replay_ret = (
+            replay_critic_loss, modules["norms"], replay_ret = (
                 modules["task_behavior"]
                 .ac.critic["extr"]
-                .replay_critic_loss(data_with_wm_outs, ret)
+                .replay_critic_loss(modules["norms"], data_with_wm_outs, ret)
             )
             losses.update(replay_critic_loss)
             metrics.update(tensorstats(replay_ret_key, replay_ret, "replay_ret"))
-        
+
         losses = {k: v.sum(-1) for k, v in losses.items()}
-        metrics.update({f'{k}_loss': v.mean() for k, v in losses.items()})
-        metrics.update({f'{k}_loss_std': v.std() for k, v in losses.items()})
+        metrics.update({f"{k}_loss": v.mean() for k, v in losses.items()})
+        metrics.update({f"{k}_loss_std": v.std() for k, v in losses.items()})
 
         scaled_losses = {k: v * self.scales[k] for k, v in losses.items()}
         loss = jnp.stack([v.mean() for v in scaled_losses.values()]).sum()
-        
 
-        return loss, (scaled_losses, metrics)
-    
+        return loss, (modules["norms"], scaled_losses, metrics)
 
     def report(self, modules, key, carry, data):
         wm_report_key, predict_err_key = random.split(key, num=2)

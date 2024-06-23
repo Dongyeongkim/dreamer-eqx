@@ -26,8 +26,8 @@ class Greedy(eqx.Module):
     def policy(self, state, latent):
         return self.ac.policy(state, latent)
 
-    def loss(self, key, imagine, start):
-        return self.ac.loss(key, imagine, start)
+    def loss(self, key, norms, imagine, start):
+        return self.ac.loss(key, norms, imagine, start)
 
     def report(self, data):
         return {}
