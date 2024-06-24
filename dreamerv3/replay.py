@@ -70,34 +70,38 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
 
 
 @eqx.filter_jit
-def chunking(buffer_state):
-    neg_splitpoint = (
-        buffer_state.num_env_size * len(buffer_state.left)
-    ) % buffer_state.chunk_size
-    splitpoint = len(buffer_state.left) - (neg_splitpoint // buffer_state.num_env_size)
+def chunking(
+    left, num_env_size, chunk_size, input_pytreedef, deskeydim, chunk_size_dict
+):
+    neg_splitpoint = (num_env_size * len(left)) % chunk_size
+    splitpoint = len(left) - (neg_splitpoint // num_env_size)
 
-    restored = [
-        tree_unflatten(buffer_state.input_pytreedef, data)
-        for data in buffer_state.left[:splitpoint]
-    ]
+    restored = [tree_unflatten(input_pytreedef, data) for data in left[:splitpoint]]
     if len(restored) == 0:
         return None
 
     prechunk = tree_stack(restored)
-    prechunk = tree_map(transform2ds, prechunk, buffer_state.deskeydim)
+    prechunk = tree_map(transform2ds, prechunk, deskeydim)
     prechunk = tree_map(
         lambda val, chunk_size: einops.rearrange(
             val, "(t c) ... -> t c ...", c=chunk_size
         ),
         prechunk,
-        buffer_state.chunk_size_dict,
+        chunk_size_dict,
     )
     return splitpoint, prechunk
 
 
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     key, partial_key = random.split(key, num=2)
-    splitpoint, prechunk = chunking(buffer_state)
+    splitpoint, prechunk = chunking(
+        buffer_state.left,
+        buffer_state.num_env_size,
+        buffer_state.chunk_size,
+        buffer_state.input_pytreedef,
+        buffer_state.deskeydim,
+        buffer_state.chunk_size_dict,
+    )
     buffer_state.left = buffer_state.left[splitpoint:]
     if prechunk is None:
         return key, buffer_state
@@ -125,8 +129,17 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
 
     return key, buffer_state
 
+
 @eqx.filter_jit
-def sampler(idx, cache, deskeydim, batch_size_dict, batch_length_dict, defrag_ratio, replay_ratio):
+def sampler(
+    idx,
+    cache,
+    deskeydim,
+    batch_size_dict,
+    batch_length_dict,
+    defrag_ratio,
+    replay_ratio,
+):
     idx %= defrag_ratio // replay_ratio
     idxes = {k: idx for k in deskeydim.keys()}
     sampled = tree_map(lambda idx, val: val[idx].squeeze(), idxes, cache)
