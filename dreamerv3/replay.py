@@ -10,6 +10,15 @@ from typing import Dict
 import chex
 
 
+cpu_data = lambda data: jax.lax.with_sharding_constraint(
+    data, jax.sharding.SingleDeviceSharding(jax.devices("cpu")[0])
+)
+
+gpu_data = lambda data: jax.lax.with_sharding_constraint(
+    data, jax.sharding.SingleDeviceSharding(jax.devices("gpu")[0])
+)
+
+
 @chex.dataclass
 class ReplayBuffer:
     left: list
@@ -92,27 +101,45 @@ def chunking(
     return splitpoint, prechunk
 
 
-@eqx.filter_jit
-def optimised_sampling(
-    buffer, bufferlen, prechunk, deskeydim, defrag_ratio, replay_ratio
-):
-    len_idxes = defrag_ratio // replay_ratio
-    idxes = jnp.arange(len_idxes)
-    chunks = jnp.where(
-        idxes == bufferlen,
-        prechunk,
-        putarray(
-            tree_map(
-                lambda idx, val: jnp.take(
-                    val, idx, axis=0
-                ),
-                {k: idxes for k in deskeydim.keys()},
-                buffer,
-            ),
-            jax.devices()[0],
-        ),
+def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
+    def apply_cond(p, *x):
+        return jax.lax.cond(p, true_fun, false_fun, *x)
+
+    return jax.tree_util.tree_map(
+        lambda pred, *x: jax.vmap(apply_cond)(pred, *x), pred, *operand_dicts
     )
-    sampled = tree_stack(chunks)
+
+
+@eqx.filter_jit
+def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
+    buffer = cpu_data(buffer)
+    prechunk = gpu_data(prechunk)
+    idxes = gpu_data(idxes)
+
+    preds = tree_map(
+        lambda idx, blen: jnp.equal(idx, blen),
+        idxes,
+        {k: bufferlen for k in deskeydim.keys()},
+    )
+    buffer = tree_map(
+        lambda idxes, val: putarray(
+            jnp.take(val, idxes, axis=0), device=jax.devices()[0]
+        ),
+        idxes,
+        buffer,
+    )
+    prechunk = tree_map(
+        lambda val: jnp.repeat(val, repeats=len(list(idxes.values())[0]), axis=0),
+        prechunk,
+    )
+
+    sampled = vectorize_cond_dict(
+        preds,
+        lambda buffer, prechunk: prechunk,
+        lambda buffer, prechunk: buffer,
+        buffer,
+        prechunk,
+    )
     return sampled
 
 
@@ -137,16 +164,22 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         buffer_state.buffer = prechunk_cpu
 
     else:
+        idxes = random.randint(
+            partial_key,
+            shape=(defrag_ratio // replay_ratio,),
+            minval=0,
+            maxval=len(list(buffer_state.buffer.values())[0]) + 1,
+        )
+        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
         buffer_state.cache = optimised_sampling(
             buffer_state.buffer,
             len(list(buffer_state.buffer.values())[0]),
             prechunk,
+            idxes_dict,
             buffer_state.deskeydim,
-            defrag_ratio,
-            replay_ratio,
         )
-        prechunk = putarray(prechunk, jax.devices("cpu")[0])
-        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
+        prechunk_cpu = putarray(prechunk, jax.devices("cpu")[0])
+        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk_cpu])
 
     return key, buffer_state
 
