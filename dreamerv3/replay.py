@@ -92,6 +92,39 @@ def chunking(
     return splitpoint, prechunk
 
 
+@eqx.filter_jit
+def optimised_sampling(
+    buffer, bufferlen, prechunk, deskeydim, defrag_ratio, replay_ratio
+):
+    len_idxes = defrag_ratio // replay_ratio
+    idxes = jnp.arange(len_idxes)
+    indicator = jnp.where(idxes == bufferlen, True, False)
+    if indicator.all() == True:
+        cache = tree_map(lambda val: jnp.repeat(val, len_idxes, axis=0), prechunk)
+        return cache
+    elif indicator.any() == False:
+        idxes = {k: idxes for k in deskeydim.keys()}
+        sampled = tree_map(
+            lambda idxes, val: jnp.take_along_axis(val, idxes, axis=0), idxes, buffer
+        )
+        return putarray(sampled)
+    else:
+        trees = []
+        for idx, ind in enumerate(indicator):
+            if ind:
+                trees.append(prechunk)
+            else:
+                idxes = {k: jnp.array(idx) for k in deskeydim.keys()}
+                cpu_sampled = tree_map(
+                    lambda idx, val: putarray(jnp.take_along_axis(val, idx, axis=0)),
+                    idxes,
+                    buffer,
+                )
+                trees.append(cpu_sampled)
+        sampled = tree_stack(trees)
+        return sampled
+
+
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     key, partial_key = random.split(key, num=2)
     splitpoint, prechunk = chunking(
@@ -113,19 +146,15 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         buffer_state.buffer = prechunk_cpu
 
     else:
+        buffer_state.cache = optimised_sampling(
+            buffer_state.buffer,
+            prechunk,
+            buffer_state.deskeydim,
+            defrag_ratio,
+            replay_ratio,
+        )
         prechunk = putarray(prechunk, jax.devices("cpu")[0])
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
-        idxes = random.randint(
-            partial_key,
-            shape=(defrag_ratio // replay_ratio,),
-            minval=0,
-            maxval=len(list(buffer_state.buffer.values())[0]),
-        )
-        idxes = {k: idxes for k in buffer_state.deskeydim.keys()}
-        sampled = tree_map(
-            lambda idxes, val: jnp.take(val, idxes, axis=0), idxes, buffer_state.buffer
-        )
-        buffer_state.cache = putarray(sampled, jax.devices()[0])
 
     return key, buffer_state
 
