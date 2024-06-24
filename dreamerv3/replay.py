@@ -101,6 +101,7 @@ def chunking(
     return splitpoint, prechunk
 
 
+@eqx.filter_jit
 def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
     def apply_cond(p, *x):
         return jax.lax.cond(p, true_fun, false_fun, *x)
@@ -110,17 +111,7 @@ def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
     )
 
 
-@eqx.filter_jit
-def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
-    buffer = cpu_data(buffer)
-    prechunk = gpu_data(prechunk)
-    idxes = gpu_data(idxes)
-
-    preds = tree_map(
-        lambda idx, blen: jnp.equal(idx, blen),
-        idxes,
-        {k: bufferlen for k in deskeydim.keys()},
-    )
+def get_from_buffer(idxes, buffer):
     buffer = tree_map(
         lambda idxes, val: putarray(
             jnp.take(val, idxes, axis=0), device=jax.devices()[0]
@@ -128,11 +119,25 @@ def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
         idxes,
         buffer,
     )
+    return buffer
+
+@eqx.filter_jit
+def get_from_cachedbuffer(prechunk, idxes, bufferlen, deskeydim):
+    preds = tree_map(
+        lambda idx, blen: jnp.equal(idx, blen),
+        idxes,
+        {k: bufferlen for k in deskeydim.keys()},
+    )
     prechunk = tree_map(
         lambda val: jnp.repeat(val, repeats=len(list(idxes.values())[0]), axis=0),
         prechunk,
     )
+    return preds, prechunk
 
+
+def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
+    buffer = get_from_buffer(idxes, buffer)
+    preds, prechunk = get_from_cachedbuffer(prechunk, idxes, bufferlen, deskeydim)
     sampled = vectorize_cond_dict(
         preds,
         lambda buffer, prechunk: prechunk,
@@ -141,7 +146,6 @@ def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
         prechunk,
     )
     return sampled
-
 
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     key, partial_key = random.split(key, num=2)
