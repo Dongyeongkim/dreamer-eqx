@@ -148,6 +148,7 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     else:
         buffer_state.cache = optimised_sampling(
             buffer_state.buffer,
+            len(list(buffer_state.buffer.values())[0]),
             prechunk,
             buffer_state.deskeydim,
             defrag_ratio,
