@@ -13,6 +13,7 @@ import chex
 @chex.dataclass
 class ReplayBuffer:
     left: list
+    cache: dict
     buffer: dict
     chunk_id: int
     deskeydim: dict
@@ -41,6 +42,7 @@ def generate_replaybuffer(
         }
     return ReplayBuffer(
         left=[],
+        cache={},
         buffer={},
         chunk_id=0,
         deskeydim=desired_key_and_dim,
@@ -67,7 +69,8 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
     return buffer_state
 
 
-def defragmenter(buffer_state):
+@eqx.filter_jit
+def chunking(buffer_state):
     neg_splitpoint = (
         buffer_state.num_env_size * len(buffer_state.left)
     ) % buffer_state.chunk_size
@@ -78,9 +81,7 @@ def defragmenter(buffer_state):
         for data in buffer_state.left[:splitpoint]
     ]
     if len(restored) == 0:
-        return buffer_state
-
-    buffer_state.left = buffer_state.left[splitpoint:]
+        return None
 
     prechunk = tree_stack(restored)
     prechunk = tree_map(transform2ds, prechunk, buffer_state.deskeydim)
@@ -91,32 +92,51 @@ def defragmenter(buffer_state):
         prechunk,
         buffer_state.chunk_size_dict,
     )
+    return splitpoint, prechunk
+
+
+def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
+    key, partial_key = random.split(key, num=2)
+    splitpoint, prechunk = chunking(buffer_state)
+    buffer_state.left = buffer_state.left[splitpoint:]
+    if prechunk is None:
+        return key, buffer_state
     if len(buffer_state.buffer.keys()) == 0:
-        prechunk = putarray(prechunk, jax.devices("cpu")[0])
-        buffer_state.buffer = prechunk
-        return buffer_state
+        buffer_state.cache = tree_map(
+            lambda val: jnp.repeat(val, defrag_ratio // replay_ratio, axis=0), prechunk
+        )
+        prechunk_cpu = putarray(prechunk, jax.devices("cpu")[0])
+        buffer_state.buffer = prechunk_cpu
 
     else:
         prechunk = putarray(prechunk, jax.devices("cpu")[0])
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
+        idxes = random.randint(
+            partial_key,
+            shape=(defrag_ratio // replay_ratio,),
+            minval=0,
+            maxval=len(list(buffer_state.buffer.values())[0]),
+        )
+        idxes = {k: idxes for k in buffer_state.deskeydim.keys()}
+        sampled = tree_map(
+            lambda idxes, val: jnp.take(val, idxes, axis=0), idxes, buffer_state.buffer
+        )
+        buffer_state.cache = putarray(sampled, jax.devices()[0])
 
-    return buffer_state
+    return key, buffer_state
 
-
-def sampler(key, buffer_state, device=None):
-    idx = random.randint(
-        key, shape=(), minval=0, maxval=len(list(buffer_state.buffer.values())[0])
-    )
-    idxes = {k: idx for k in buffer_state.deskeydim.keys()}
-    sampled = tree_map(lambda idx, val: val[idx].squeeze(), idxes, buffer_state.buffer)
+@eqx.filter_jit
+def sampler(idx, cache, deskeydim, batch_size_dict, batch_length_dict, defrag_ratio, replay_ratio):
+    idx %= defrag_ratio // replay_ratio
+    idxes = {k: idx for k in deskeydim.keys()}
+    sampled = tree_map(lambda idx, val: val[idx].squeeze(), idxes, cache)
     batched = tree_map(
         transform2batch,
         sampled,
-        buffer_state.deskeydim,
-        buffer_state.batch_size_dict,
-        buffer_state.batch_length_dict,
+        deskeydim,
+        batch_size_dict,
+        batch_length_dict,
     )
-    batched = putarray(batched, jax.devices()[0] if device is None else device)
     return batched
 
 

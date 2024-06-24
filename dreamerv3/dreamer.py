@@ -85,6 +85,7 @@ class DreamerV3:
             raise NotImplementedError
         return state, outs
 
+    @eqx.filter_jit
     def train(self, modules, key, carry, data, opt, opt_state):
         context_data = data.copy()
         context = {
