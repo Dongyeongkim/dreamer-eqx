@@ -98,31 +98,22 @@ def optimised_sampling(
 ):
     len_idxes = defrag_ratio // replay_ratio
     idxes = jnp.arange(len_idxes)
-    indicator = jnp.where(idxes == bufferlen, True, False)
-    if indicator.all() == True:
-        cache = tree_map(lambda val: jnp.repeat(val, len_idxes, axis=0), prechunk)
-        return cache
-    elif indicator.any() == False:
-        idxes = {k: idxes for k in deskeydim.keys()}
-        sampled = tree_map(
-            lambda idxes, val: jnp.take_along_axis(val, idxes, axis=0), idxes, buffer
-        )
-        return putarray(sampled)
-    else:
-        trees = []
-        for idx, ind in enumerate(indicator):
-            if ind:
-                trees.append(prechunk)
-            else:
-                idxes = {k: jnp.array(idx) for k in deskeydim.keys()}
-                cpu_sampled = tree_map(
-                    lambda idx, val: putarray(jnp.take_along_axis(val, idx, axis=0)),
-                    idxes,
-                    buffer,
-                )
-                trees.append(cpu_sampled)
-        sampled = tree_stack(trees)
-        return sampled
+    chunks = jnp.where(
+        idxes == bufferlen,
+        prechunk,
+        putarray(
+            tree_map(
+                lambda idx, val: jnp.take(
+                    val, idx, axis=0
+                ),
+                {k: idxes for k in deskeydim.keys()},
+                buffer,
+            ),
+            jax.devices()[0],
+        ),
+    )
+    sampled = tree_stack(chunks)
+    return sampled
 
 
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
