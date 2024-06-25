@@ -18,13 +18,13 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
 
     wm = WorldModel(wm_key, obs_space, act_space, config)
     task_behavior = getattr(behaviors, config.agent.task_behavior)(
-        ac_key, wm, act_space, config
+        ac_key, act_space, config
     )
     if config.agent.expl_behavior == "None":
         expl_behavior = task_behavior
     else:
         expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
-            ac2_key, wm, act_space, config
+            ac2_key, act_space, config
         )
     return {
         "wm": wm,
