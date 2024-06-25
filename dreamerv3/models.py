@@ -322,7 +322,6 @@ class VFunction(eqx.Module):
         net_key, slow_key = random.split(key, num=2)
         self.net = MLP(net_key, out_shape=(), **config.agent.critic)
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
-        # self.valnorm = Moments(**config.agent.valnorm)
         self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 
