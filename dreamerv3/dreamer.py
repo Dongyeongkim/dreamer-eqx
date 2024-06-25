@@ -18,13 +18,13 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
 
     wm = WorldModel(wm_key, obs_space, act_space, config)
     task_behavior = getattr(behaviors, config.agent.task_behavior)(
-        ac_key, wm, act_space, config
+        ac_key, act_space, config
     )
     if config.agent.expl_behavior == "None":
         expl_behavior = task_behavior
     else:
         expl_behavior = getattr(behaviors, config.agent.expl_behavior)(
-            ac2_key, wm, act_space, config
+            ac2_key, act_space, config
         )
     return {
         "wm": wm,
@@ -35,7 +35,7 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
             "advnorm": Moments(**config.agent.advnorm),
             "valnorm": Moments(**config.agent.valnorm),
         },
-        "updater": SlowUpdater(),
+        "updater": SlowUpdater(fraction=0.02),
     }
 
 
@@ -55,7 +55,8 @@ class DreamerV3:
 
     def train_initial(self, modules, batch_size):
         return modules["wm"].initial(batch_size)
-
+    
+    @eqx.filter_jit
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
         embed = modules["wm"].encoder(obs["observation"])
@@ -85,6 +86,7 @@ class DreamerV3:
             raise NotImplementedError
         return state, outs
 
+    @eqx.filter_jit
     def train(self, modules, key, carry, data, opt, opt_state):
         context_data = data.copy()
         context = {

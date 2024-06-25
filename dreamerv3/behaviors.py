@@ -11,11 +11,10 @@ tfd = tfp.distributions
 class Greedy(eqx.Module):
     ac: eqx.Module
 
-    def __init__(self, key, wm, act_space, config):
-        rewfn = lambda s: wm.heads["reward"](get_feat(s)).mean()[:, 1:]
+    def __init__(self, key, act_space, config):
         criticKey, acKey = random.split(key)
         if config.agent.critic_type == "vfunction":
-            critics = {"extr": VFunction(criticKey, rewfn, config)}
+            critics = {"extr": VFunction(criticKey, config)}
         else:
             raise NotImplementedError(config.agent.critic_type)
         self.ac = ImagActorCritic(acKey, critics, {"extr": 1.0}, act_space, config)

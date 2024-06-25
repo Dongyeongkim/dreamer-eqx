@@ -13,6 +13,7 @@ from .dreamerutils import (
     add_colour_frame,
     SlowUpdater,
 )
+from jax.tree_util import tree_map
 from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
 from typing import Callable
@@ -113,7 +114,7 @@ class WorldModel(eqx.Module):
 
     def imagine(self, key, policy, start, horizon):
         first_cont = start["startcon"]
-        startlat = start["startlat"]
+        startlat = sg(start["startlat"])
         startout = start["startout"]
         startrew = start["startrew"]
 
@@ -145,11 +146,14 @@ class WorldModel(eqx.Module):
             k: jnp.concatenate([startlat[k][None], v], 0).swapaxes(1, 0)
             for k, v in traj.items()
         }
+        traj = tree_map(lambda x: sg(x), traj)
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
+        rew = self.heads["reward"](get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
+        traj["reward"] = jnp.concatenate([startrew[:, None],  rew[:, 1:]], 1)
+
         discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
         traj["weight"] = jnp.cumprod(discount * traj["cont"], 1) / discount
-        traj["startrew"] = startrew
         return traj
 
     @eqx.filter_jit
@@ -313,21 +317,15 @@ class ImagActorCritic(eqx.Module):
 class VFunction(eqx.Module):
     net: eqx.Module
     slow: eqx.Module
-    rewfn: Callable
     config: FrozenConfigDict
 
-    def __init__(self, key, rewfn, config):
+    def __init__(self, key, config):
         net_key, slow_key = random.split(key, num=2)
         self.net = MLP(net_key, out_shape=(), **config.agent.critic)
         self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
-        # self.valnorm = Moments(**config.agent.valnorm)
-        self.rewfn = rewfn
         self.config = FrozenConfigDict(config)
 
     def score(self, valnorm, traj, actor=None):
-        rew = jnp.concatenate([traj["startrew"][:, None], self.rewfn(traj)], 1)
-        _ = traj.pop("startrew")
-
         critic = self.net(get_feat(traj))
         slowcritic = self.slow(get_feat(traj))
         voffset, vscale = valnorm.stats()
@@ -339,11 +337,11 @@ class VFunction(eqx.Module):
         rets = [tarval[:, -1]]
         disc = traj["cont"][:, 1:] * discount
         lam = self.config.agent.return_lambda
-        interm = rew[:, 1:] + (1 - lam) * disc * tarval[:, 1:]
+        interm = traj["reward"][:, 1:] + (1 - lam) * disc * tarval[:, 1:]
         for t in reversed(range(disc.shape[1])):
             rets.append(interm[:, t] + disc[:, t] * lam * rets[-1])
         ret = jnp.stack(list(reversed(rets))[:-1], 1)
-        return rew, ret, tarval, val, critic, slowcritic
+        return traj["reward"], ret, tarval, val, critic, slowcritic
 
     def replay_critic_loss(self, norms, traj, ret, update=True):
         losses = {}

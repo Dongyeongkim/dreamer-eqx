@@ -1,5 +1,5 @@
 import tqdm
-import equinox as eqx
+import jax
 from jax import random
 from dreamerv3.replay import defragmenter, pushstep, sampler
 
@@ -34,18 +34,26 @@ def train_and_evaluate_fn(
     }
 
     for idx in tqdm.tqdm(range(num_steps)):
-        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-
         if idx % defrag_ratio == 0:
-            state["rb_state"] = defragmenter(state["rb_state"])
+            state["key"], state["rb_state"] = defragmenter(
+                state["key"], state["rb_state"], defrag_ratio, replay_ratio
+            )
 
         if idx % replay_ratio == 0:
             state, lossval, loss_and_info = train_agent_fn(
-                agent_fn, env_fn, opt_fn, env_params=env_params, **state
+                agent_fn,
+                env_fn,
+                opt_fn,
+                defrag_ratio,
+                replay_ratio,
+                env_params=env_params,
+                idx=idx,
+                **state
             )
             if idx % 2 * replay_ratio == 0:
-                logger._write(loss_and_info[1], 16 * idx)
-
+                logger._write(loss_and_info[1], env_fn.num_envs * idx)
+        
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
 
 
@@ -100,7 +108,7 @@ def interaction_fn(
     timestep["deter"] = agent_state[0][0]["deter"]
     timestep["stoch"] = agent_state[0][0]["stoch"]
     timestep["action"] = agent_state[0][1]
-    agent_state, outs = eqx.filter_jit(agent_fn.policy)(
+    agent_state, outs = agent_fn.policy(
         agent_modules, policy_key, agent_state, timestep
     )
 
@@ -119,6 +127,8 @@ def train_agent_fn(
     agent_fn,
     env_fn,
     opt_fn,
+    defrag_ratio,
+    replay_ratio,
     key,
     agent_modules,
     agent_state,
@@ -126,12 +136,19 @@ def train_agent_fn(
     env_state,
     opt_state,
     rb_state,
+    idx,
 ):
-    key, rb_sampling_key, training_key = random.split(key, num=3)
-    sampled_data = sampler(rb_sampling_key, rb_state)
-    agent_modules, opt_state, total_loss, loss_and_info = eqx.filter_jit(
-        agent_fn.train
-    )(
+    key, training_key = random.split(key, num=2)
+    sampled_data = sampler(
+        idx,
+        rb_state.cache,
+        rb_state.deskeydim,
+        rb_state.batch_size_dict,
+        rb_state.batch_length_dict,
+        defrag_ratio,
+        replay_ratio,
+    )
+    agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
         training_key,
         agent_state,

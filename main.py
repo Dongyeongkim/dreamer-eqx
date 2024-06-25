@@ -9,6 +9,7 @@ def main(cfg):
 
     config = ml_collections.ConfigDict(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".90"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
     from utils.logger import Logger
@@ -24,11 +25,11 @@ def main(cfg):
 
     key = random.key(config.seed)
 
-    print(f"Environment is compiling...")
+    print(f"Building the Environment...")
 
     env = make_craftax_env(**config.env)
 
-    print(f"Compiling is done...")
+    print(f"Done!")
 
     env_params = env.default_params
     key, reset_key = jax.random.split(key)
@@ -72,7 +73,7 @@ def main(cfg):
     key, prefill_key = jax.random.split(key)
     rb_state = prefill_fn(
         prefill_key,
-        65,
+        1040,
         dreamer,
         env,
         opt_fn,
@@ -87,9 +88,9 @@ def main(cfg):
     key, training_key = jax.random.split(key)
     state = train_and_evaluate_fn(
         key=training_key,
-        num_steps=config.num_interaction_steps,
-        defrag_ratio=65,
-        replay_ratio=32,
+        num_steps=int(config.env.num_interaction_steps//config.env.num_envs),
+        defrag_ratio=1040,
+        replay_ratio=(config.env.replay_ratio//config.env.num_envs),
         logger=logger,
         agent_fn=dreamer,
         env_fn=env,

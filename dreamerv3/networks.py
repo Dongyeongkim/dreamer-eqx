@@ -713,7 +713,7 @@ class MLP(eqx.Module):
                 maxstd=maxstd,
                 unimix=unimix,
                 bins=bins,
-                outscale=0.1,
+                outscale=outscale,
                 use_bias=True,
                 winit="normal",
                 fan="in",

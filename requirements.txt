@@ -4,12 +4,14 @@ brax
 mujoco
 dm-env
 jax
+tqdm
 optax
 einops
 equinox
 orbax-checkpoint
 tensorboard
-tensorflow-cpu
+tensorflow
+tf-keras
 tensorflow-probability
 
 
