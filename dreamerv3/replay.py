@@ -74,7 +74,7 @@ def generate_replaybuffer(
 
 def pushstep(buffer_state, data: Dict[str, jnp.array]):
     vals = tree_leaves(data)
-    buffer_state.left = [*buffer_state.left, vals]
+    buffer_state.left.append(vals)
     return buffer_state
 
 
@@ -93,7 +93,7 @@ def chunking(
     prechunk = tree_map(transform2ds, prechunk, deskeydim)
     prechunk = tree_map(
         lambda val, chunk_size: einops.rearrange(
-            val, "(t c) ... -> t c ...", c=chunk_size
+            val, "(t b) ... -> b t ...", t=chunk_size
         ),
         prechunk,
         chunk_size_dict,
@@ -121,35 +121,50 @@ def get_from_buffer(idxes, buffer):
     )
     return buffer
 
+
 @eqx.filter_jit
-def get_from_cachedbuffer(prechunk, idxes, bufferlen, deskeydim):
+def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
     preds = tree_map(
-        lambda idx, blen: jnp.equal(idx, blen),
+        lambda idx, blen: jnp.greater_equal(idx, blen),
         idxes,
         {k: bufferlen for k in deskeydim.keys()},
     )
-    prechunk = tree_map(
-        lambda val: jnp.repeat(val, repeats=len(list(idxes.values())[0]), axis=0),
-        prechunk,
+    mod_idxes = tree_map(
+        lambda idx, blen, prechunk: jnp.int32(jnp.greater_equal(idx, blen))
+        * (idx - blen)
+        + jnp.int32(jnp.less_equal(idx, blen)) * (prechunk.shape[0] + 1),
+        idxes,
+        {k: bufferlen for k in deskeydim.keys()},
+        prechunks,
     )
-    return preds, prechunk
+    prechunks = tree_map(
+        lambda idxes, val: jnp.take(val, idxes, axis=0),
+        mod_idxes,
+        prechunks,
+    )
+    return preds, prechunks
 
 
-def optimised_sampling(buffer, bufferlen, prechunk, idxes, deskeydim):
-    buffer = get_from_buffer(idxes, buffer)
-    preds, prechunk = get_from_cachedbuffer(prechunk, idxes, bufferlen, deskeydim)
+def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
+    if bufferlen:
+        buffer = get_from_buffer(idxes, buffer)
+    else:
+        _, sampled = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
+        return sampled 
+    preds, prechunks = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
     sampled = vectorize_cond_dict(
         preds,
         lambda buffer, prechunk: prechunk,
         lambda buffer, prechunk: buffer,
         buffer,
-        prechunk,
+        prechunks,
     )
     return sampled
 
+
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     key, partial_key = random.split(key, num=2)
-    splitpoint, prechunk = chunking(
+    splitpoint, prechunks = chunking(
         buffer_state.left,
         buffer_state.num_env_size,
         buffer_state.chunk_size,
@@ -158,32 +173,40 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         buffer_state.chunk_size_dict,
     )
     buffer_state.left = buffer_state.left[splitpoint:]
-    if prechunk is None:
+    if prechunks is None:
         return key, buffer_state
-    if len(buffer_state.buffer.keys()) == 0:
-        buffer_state.cache = tree_map(
-            lambda val: jnp.repeat(val, defrag_ratio // replay_ratio, axis=0), prechunk
+    
+    bufferlen = 0
+    if len(buffer_state.buffer) == 0:
+        idxes = random.randint(
+            partial_key,
+            shape=(defrag_ratio // replay_ratio,),
+            minval=0,
+            maxval=len(list(prechunks.values())[0]),
         )
-        prechunk_cpu = putarray(prechunk, jax.devices("cpu")[0])
-        buffer_state.buffer = prechunk_cpu
-
     else:
         idxes = random.randint(
             partial_key,
             shape=(defrag_ratio // replay_ratio,),
             minval=0,
-            maxval=len(list(buffer_state.buffer.values())[0]) + 1,
+            maxval=len(list(buffer_state.buffer.values())[0])
+            + len(list(prechunks.values())[0]),
         )
-        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
-        buffer_state.cache = optimised_sampling(
-            buffer_state.buffer,
-            len(list(buffer_state.buffer.values())[0]),
-            prechunk,
-            idxes_dict,
-            buffer_state.deskeydim,
-        )
-        prechunk_cpu = putarray(prechunk, jax.devices("cpu")[0])
-        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk_cpu])
+        bufferlen = len(list(buffer_state.buffer.values())[0])
+
+    idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
+    buffer_state.cache = optimised_sampling(
+        buffer_state.buffer,
+        bufferlen,
+        prechunks,
+        idxes_dict,
+        buffer_state.deskeydim,
+    )
+    prechunks_cpu = putarray(prechunks, jax.devices("cpu")[0])
+    if bufferlen:
+        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
+    else:
+        buffer_state.buffer = prechunks_cpu
 
     return key, buffer_state
 
@@ -250,7 +273,7 @@ def transform2batch(
     assert len(data.shape) == expected_dim, "dimension does not fit with expected dim"
     return einops.rearrange(
         data,
-        "(t b) ... -> b t ...",
+        "(b t) ... -> b t ...",
         b=batch_size,
         t=batch_length,
     )

@@ -26,13 +26,13 @@ def make_dmc_env(env_name: str, **kwargs):
     return env
 
 
-def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1):
+def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, reset_ratio: int = 1, **kwargs):
     assert num_envs > 0, "number of the environments must be greater or equal than 1"
     env = make_craftax_env_from_name(env_name, not autoreset)
     if num_envs > 1:
         if autoreset:
             env = OptimisticResetVecEnvWrapper(
-                env, num_envs=num_envs, reset_ratio=16
+                env, num_envs=num_envs, reset_ratio=reset_ratio
             )  # fixed value; from the craftax paper
         else:
             env = BatchEnvWrapper(env)

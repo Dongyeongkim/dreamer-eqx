@@ -55,7 +55,8 @@ class DreamerV3:
 
     def train_initial(self, modules, batch_size):
         return modules["wm"].initial(batch_size)
-
+    
+    @eqx.filter_jit
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
         embed = modules["wm"].encoder(obs["observation"])

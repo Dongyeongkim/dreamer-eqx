@@ -11,6 +11,7 @@ from dreamerv3.replay import defragmenter, pushstep, sampler
 def train_and_evaluate_fn(
     key,
     num_steps,
+    num_envs,
     defrag_ratio,
     replay_ratio,
     logger,
@@ -53,7 +54,7 @@ def train_and_evaluate_fn(
                 **state
             )
             if idx % 2 * replay_ratio == 0:
-                logger._write(loss_and_info[1], 16 * idx)
+                logger._write(loss_and_info[1], num_envs * idx)
 
     return state
 
@@ -109,7 +110,7 @@ def interaction_fn(
     timestep["deter"] = agent_state[0][0]["deter"]
     timestep["stoch"] = agent_state[0][0]["stoch"]
     timestep["action"] = agent_state[0][1]
-    agent_state, outs = eqx.filter_jit(agent_fn.policy)(
+    agent_state, outs = agent_fn.policy(
         agent_modules, policy_key, agent_state, timestep
     )
 
