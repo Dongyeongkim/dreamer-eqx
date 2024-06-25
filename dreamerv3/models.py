@@ -13,6 +13,7 @@ from .dreamerutils import (
     add_colour_frame,
     SlowUpdater,
 )
+from jax.tree_util import tree_map
 from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
 from typing import Callable
@@ -113,7 +114,7 @@ class WorldModel(eqx.Module):
 
     def imagine(self, key, policy, start, horizon):
         first_cont = start["startcon"]
-        startlat = start["startlat"]
+        startlat = sg(start["startlat"])
         startout = start["startout"]
         startrew = start["startrew"]
 
@@ -145,6 +146,7 @@ class WorldModel(eqx.Module):
             k: jnp.concatenate([startlat[k][None], v], 0).swapaxes(1, 0)
             for k, v in traj.items()
         }
+        traj = tree_map(lambda x: sg(x), traj)
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
         discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon

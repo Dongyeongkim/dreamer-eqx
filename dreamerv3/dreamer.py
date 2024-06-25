@@ -35,7 +35,7 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
             "advnorm": Moments(**config.agent.advnorm),
             "valnorm": Moments(**config.agent.valnorm),
         },
-        "updater": SlowUpdater(),
+        "updater": SlowUpdater(fraction=0.02),
     }
 
 
