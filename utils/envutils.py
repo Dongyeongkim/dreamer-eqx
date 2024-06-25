@@ -1,5 +1,4 @@
-import os
-import jax.numpy as jnp
+import numpy as np
 
 from craftax.craftax_env import make_craftax_env_from_name
 from envs.wrappers.craftax_wrapper import (
@@ -25,14 +24,12 @@ def make_dmc_env(env_name: str, **kwargs):
 
 def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, **kwargs):
     assert num_envs > 0, "number of the environments must be greater or equal than 1"
-    env = make_craftax_env_from_name(env_name, autoreset)
-    env.num_envs = 1
-    if num_envs > 1:
-        env = make_craftax_env_from_name(env_name, not autoreset)
-        if autoreset:
-            env = OptimisticResetVecEnvWrapper(env, num_envs=num_envs, reset_ratio=jnp.minimum(num_envs, 16))  
-        else:
-            env = BatchEnvWrapper(env)
+    
+    env = make_craftax_env_from_name(env_name, not autoreset)
+    if autoreset:
+        env = OptimisticResetVecEnvWrapper(env, num_envs=num_envs, reset_ratio=np.minimum(num_envs, 16))  
+    else:
+        env = BatchEnvWrapper(env)
     env = CraftaxWrapper(env)
 
     return env

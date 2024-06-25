@@ -1,5 +1,5 @@
 import tqdm
-import equinox as eqx
+import jax
 from jax import random
 from dreamerv3.replay import defragmenter, pushstep, sampler
 
@@ -34,8 +34,6 @@ def train_and_evaluate_fn(
     }
 
     for idx in tqdm.tqdm(range(num_steps)):
-        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-
         if idx % defrag_ratio == 0:
             state["key"], state["rb_state"] = defragmenter(
                 state["key"], state["rb_state"], defrag_ratio, replay_ratio
@@ -54,7 +52,8 @@ def train_and_evaluate_fn(
             )
             if idx % 2 * replay_ratio == 0:
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
-
+        
+        state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
 
 

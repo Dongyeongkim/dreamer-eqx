@@ -43,12 +43,8 @@ def generate_replaybuffer(
     assert (
         num_env > 0
     ), "number of the environments should be greater or equal than 1(replay buffer)"
-    if num_env == 1:
-        desired_key_and_dim = {k: len(v) for k, v in desired_key_dim.items()}
-    else:
-        desired_key_and_dim = {
-            k: len((num_env,) + v) for k, v in desired_key_dim.items()
-        }
+    
+    desired_key_and_dim = {k: len((num_env,) + v) for k, v in desired_key_dim.items()}
     return ReplayBuffer(
         left=[],
         cache={},
@@ -132,7 +128,7 @@ def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
     mod_idxes = tree_map(
         lambda idx, blen, prechunk: jnp.int32(jnp.greater_equal(idx, blen))
         * (idx - blen)
-        + jnp.int32(jnp.less_equal(idx, blen)) * (prechunk.shape[0] + 1),
+        + jnp.int32(jnp.less(idx, blen)) * (prechunk.shape[0]),
         idxes,
         {k: bufferlen for k in deskeydim.keys()},
         prechunks,
