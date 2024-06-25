@@ -154,7 +154,7 @@ class CraftaxWrapper(GymnaxWrapper):
         return env_state, {
             "observation": jax.image.resize(
                 obs,
-                (obs.shape[0], self._shape[0], self._shape[1], obs.shape[3]),
+                (self.num_envs, self._shape[0], self._shape[1], obs.shape[3]),
                 "nearest",
             ),
             "reward": jnp.zeros((self.num_envs,)),

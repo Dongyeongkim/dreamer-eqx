@@ -11,7 +11,6 @@ from dreamerv3.replay import defragmenter, pushstep, sampler
 def train_and_evaluate_fn(
     key,
     num_steps,
-    num_envs,
     defrag_ratio,
     replay_ratio,
     logger,
@@ -54,7 +53,7 @@ def train_and_evaluate_fn(
                 **state
             )
             if idx % 2 * replay_ratio == 0:
-                logger._write(loss_and_info[1], num_envs * idx)
+                logger._write(loss_and_info[1], env_fn.num_envs * idx)
 
     return state
 
