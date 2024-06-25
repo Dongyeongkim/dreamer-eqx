@@ -1,8 +1,5 @@
 import os
-
-# os.environ["MUJOCO_GL"] = "egl"
-# os.environ["MUJOCO_RENDERER"] = "egl"
-# Currently disabled due to system does not fit the setting
+import jax.numpy as jnp
 
 from craftax.craftax_env import make_craftax_env_from_name
 from envs.wrappers.craftax_wrapper import (
@@ -26,17 +23,16 @@ def make_dmc_env(env_name: str, **kwargs):
     return env
 
 
-def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, reset_ratio: int = 1, **kwargs):
+def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, **kwargs):
     assert num_envs > 0, "number of the environments must be greater or equal than 1"
-    env = make_craftax_env_from_name(env_name, not autoreset)
+    env = make_craftax_env_from_name(env_name, autoreset)
+    env.num_envs = 1
     if num_envs > 1:
+        env = make_craftax_env_from_name(env_name, not autoreset)
         if autoreset:
-            env = OptimisticResetVecEnvWrapper(
-                env, num_envs=num_envs, reset_ratio=reset_ratio
-            )  # fixed value; from the craftax paper
+            env = OptimisticResetVecEnvWrapper(env, num_envs=num_envs, reset_ratio=jnp.minimum(num_envs, 16))  
         else:
             env = BatchEnvWrapper(env)
-
     env = CraftaxWrapper(env)
 
     return env
