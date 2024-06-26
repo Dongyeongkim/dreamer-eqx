@@ -145,7 +145,7 @@ class WorldModel(eqx.Module):
             for k, v in traj.items()
         }
         traj = tree_map(lambda x: sg(x), traj)
-        cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
+        cont = self.heads["cont"](get_feat(traj)).mode()
         rew = self.heads["reward"](get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
         traj["reward"] = jnp.concatenate([startrew[:, None], rew[:, 1:]], 1)
@@ -177,7 +177,7 @@ class WorldModel(eqx.Module):
             carry[0],
             data["action"][:, :num_obs],
             eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(
-                data["image"][:, :num_obs]
+                data["observation"][:, :num_obs]
             ),
             data["is_first"][:, :num_obs],
         )
@@ -185,20 +185,21 @@ class WorldModel(eqx.Module):
             oloop_key, img_start, data["action"][:, num_obs:]
         )
         rec = dict(
-            recon=eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+            recon=MSEDist(eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
                 rec_outs
-            ),
-            reward=self.heads["reward"](rec_outs),
-            cont=self.heads["cont"](rec_outs),
+            ), 3, "sum"),
+            reward=self.heads["reward"](get_feat(rec_outs)),
+            cont=self.heads["cont"](get_feat(rec_outs)),
         )
         img = dict(
-            recon=eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+            recon=MSEDist(eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
                 img_outs
-            ),
-            reward=self.heads["reward"](img_outs),
-            cont=self.heads["cont"](img_outs),
+            ), 3, "sum"),
+            reward=self.heads["reward"](get_feat(img_outs)),
+            cont=self.heads["cont"](get_feat(img_outs)),
         )
         data_img = {k: v[:, num_obs:] for k, v in data.items()}
+        data_img["recon"] = data_img["observation"]
         cont = data_img.pop("is_terminal")
         data_img["cont"] = 1 - jnp.float32(cont)
         losses = {k: -v.log_prob(data_img[k].astype("float32")) for k, v in img.items()}
@@ -208,15 +209,15 @@ class WorldModel(eqx.Module):
         stats = balance_stats(img["cont"], data_img["cont"], 0.5)
         metrics.update({f"openl_cont_{k}": v for k, v in stats.items()})
 
-        obs = rec["recon"][:6]
-        openl = img["recon"][:6]
-        true = data["image"][:6]
+        obs = rec["recon"].mode()[:6]
+        openl = img["recon"].mode()[:6]
+        true = data["observation"][:6]
         pred = jnp.concatenate([obs, openl], 1)
         error = (pred - true + 1) / 2
         model_w_grid = jnp.concatenate(
             [
-                add_colour_frame(obs, colour="green"),
-                add_colour_frame(img, colour="red"),
+                add_colour_frame(obs.astype("float32"), colour="green"),
+                add_colour_frame(openl.astype("float32"), colour="red"),
             ],
             1,
         )

@@ -163,11 +163,20 @@ class DreamerV3:
                 .replay_critic_loss(modules["norms"], data_with_wm_outs, ret)
             )
             losses.update(replay_critic_loss)
-            metrics.update(tensorstats(replay_ret_key, replay_ret, "replay_ret"))
+            metrics.update(
+                {
+                    f"train/{k}": v
+                    for k, v in tensorstats(
+                        replay_ret_key, replay_ret, "replay_ret"
+                    ).items()
+                }
+            )
         scaled_losses = {k: v * self.scales[k] for k, v in losses.items()}
         loss = jnp.stack([v.mean() for v in scaled_losses.values()]).sum()
         metrics.update({f"train/{k}_loss": v.mean() for k, v in scaled_losses.items()})
-        metrics.update({f"train/{k}_loss_std": v.std() for k, v in scaled_losses.items()})
+        metrics.update(
+            {f"train/{k}_loss_std": v.std() for k, v in scaled_losses.items()}
+        )
 
         return loss, (modules["norms"], scaled_losses, metrics)
 
