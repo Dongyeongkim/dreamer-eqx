@@ -56,7 +56,7 @@ def train_and_evaluate_fn(
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
 
         if idx % report_ratio == 0:
-            state["key"], state["agent_modules"], report = report_fn(
+            state["key"], report = report_fn(
                 agent_fn,
                 defrag_ratio,
                 replay_ratio,
