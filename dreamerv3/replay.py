@@ -43,7 +43,7 @@ def generate_replaybuffer(
     assert (
         num_env > 0
     ), "number of the environments should be greater or equal than 1(replay buffer)"
-    
+
     desired_key_and_dim = {k: len((num_env,) + v) for k, v in desired_key_dim.items()}
     return ReplayBuffer(
         left=[],
@@ -146,7 +146,7 @@ def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
         buffer = get_from_buffer(idxes, buffer)
     else:
         _, sampled = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
-        return sampled 
+        return sampled
     preds, prechunks = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
     sampled = vectorize_cond_dict(
         preds,
@@ -171,7 +171,7 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     buffer_state.left = buffer_state.left[splitpoint:]
     if prechunks is None:
         return key, buffer_state
-    
+
     bufferlen = 0
     if len(buffer_state.buffer) == 0:
         idxes = random.randint(

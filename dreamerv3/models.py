@@ -5,18 +5,14 @@ from jax import random
 import jax.numpy as jnp
 from .dreamerutils import (
     MSEDist,
-    Moments,
     get_feat,
     tensorstats,
-    subsample,
     image_grid,
     add_colour_frame,
-    SlowUpdater,
 )
 from jax.tree_util import tree_map
 from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
-from typing import Callable
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
@@ -151,9 +147,13 @@ class WorldModel(eqx.Module):
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
         rew = self.heads["reward"](get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
-        traj["reward"] = jnp.concatenate([startrew[:, None],  rew[:, 1:]], 1)
+        traj["reward"] = jnp.concatenate([startrew[:, None], rew[:, 1:]], 1)
 
-        discount = 1 if self.config.agent.contdisc else 1 - 1 / self.config.agent.discount_horizon
+        discount = (
+            1
+            if self.config.agent.contdisc
+            else 1 - 1 / self.config.agent.discount_horizon
+        )
         traj["weight"] = jnp.cumprod(discount * traj["cont"], 1) / discount
         return traj
 
@@ -269,7 +269,7 @@ class ImagActorCritic(eqx.Module):
         ents = actor.entropy()[
             :, :-1
         ]  # this part has been changed also for same reason
-        
+
         losses["actor"] = sg(traj["weight"][:, :-1]) * -(
             logpi * sg(adv_normed) + self.config.agent.actent * ents
         )  # this part also has been changed; will be same btw
@@ -335,7 +335,11 @@ class VFunction(eqx.Module):
         val = critic.mean() * vscale + voffset
         slowval = slowcritic.mean() * vscale + voffset
         tarval = slowval if self.config.agent.slowtar else val
-        discount = 1 if self.config.agent.contdisc else 1 - 1 / self.config.agent.discount_horizon
+        discount = (
+            1
+            if self.config.agent.contdisc
+            else 1 - 1 / self.config.agent.discount_horizon
+        )
 
         rets = [tarval[:, -1]]
         disc = traj["cont"][:, 1:] * discount
@@ -349,7 +353,9 @@ class VFunction(eqx.Module):
     def replay_critic_loss(self, norms, traj, ret, update=True):
         losses = {}
         replay_critic = self.net(
-            get_feat(traj) if self.config.agent.replay_critic_grad else sg(get_feat(traj))
+            get_feat(traj)
+            if self.config.agent.replay_critic_grad
+            else sg(get_feat(traj))
         )
         replay_slowcritic = self.slow(get_feat(traj))
 

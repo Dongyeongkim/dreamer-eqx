@@ -52,7 +52,7 @@ def train_and_evaluate_fn(
             )
             if idx % 2 * replay_ratio == 0:
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
-        
+
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
 

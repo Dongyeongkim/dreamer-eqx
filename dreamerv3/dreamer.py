@@ -35,7 +35,10 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
             "advnorm": Moments(**config.agent.advnorm),
             "valnorm": Moments(**config.agent.valnorm),
         },
-        "updater": SlowUpdater(fraction=config.agent.slow_critic_fraction, period=config.agent.slow_critic_update),
+        "updater": SlowUpdater(
+            fraction=config.agent.slow_critic_fraction,
+            period=config.agent.slow_critic_update,
+        ),
     }
 
 
@@ -55,7 +58,7 @@ class DreamerV3:
 
     def train_initial(self, modules, batch_size):
         return modules["wm"].initial(batch_size)
-    
+
     @eqx.filter_jit
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
