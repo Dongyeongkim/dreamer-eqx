@@ -1,4 +1,5 @@
 import jax
+import numpy as np
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
@@ -7,7 +8,14 @@ from .models import WorldModel
 from jax.tree_util import tree_map
 from .dreamerutils import Moments
 from .dreamerutils import SlowUpdater
-from .dreamerutils import tensorstats
+from .dreamerutils import (
+    tensorstats,
+    balance_stats,
+    add_colour_frame,
+    get_feat,
+    video_grid,
+    MSEDist,
+)
 
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
@@ -180,6 +188,85 @@ class DreamerV3:
 
         return loss, (modules["norms"], scaled_losses, metrics)
 
+    @eqx.filter_jit
+    def jax_report(self, modules, key, data):
+        report = {}
+        loss_key, obs_key, oloop_key = random.split(key, num=3)
+        carry = modules["wm"].initial(len(data["is_first"]))
+
+        # Loss and metrics
+        losses, (loss_outs, carry_out, metrics) = modules["wm"].loss(
+            loss_key, carry, data
+        )
+        report.update(metrics)
+        report.update({f"{k}_loss": v.mean() for k, v in losses.items()})
+
+        _, T = data["is_first"].shape
+        num_obs = min(self.config.report.report_openl_context, T // 2)
+
+        img_start, rec_outs = modules["wm"].rssm.observe(
+            obs_key,
+            carry[0],
+            data["action"][:, :num_obs],
+            eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(
+                data["observation"][:, :num_obs]
+            ),
+            data["is_first"][:, :num_obs],
+        )
+        _, img_outs = modules["wm"].rssm.imagine(
+            oloop_key, img_start, data["action"][:, num_obs:]
+        )
+        rec = dict(
+            recon=MSEDist(
+                eqx.filter_vmap(modules["wm"].heads["decoder"], in_axes=1, out_axes=1)(
+                    rec_outs
+                ),
+                3,
+                "sum",
+            ),
+            reward=self.heads["reward"](get_feat(rec_outs)),
+            cont=self.heads["cont"](get_feat(rec_outs)),
+        )
+        img = dict(
+            recon=MSEDist(
+                eqx.filter_vmap(modules["wm"].heads["decoder"], in_axes=1, out_axes=1)(
+                    img_outs
+                ),
+                3,
+                "sum",
+            ),
+            reward=self.heads["reward"](get_feat(img_outs)),
+            cont=self.heads["cont"](get_feat(img_outs)),
+        )
+        data_img = {k: v[:, num_obs:] for k, v in data.items()}
+        data_img["recon"] = data_img["observation"]
+        cont = data_img.pop("is_terminal")
+        data_img["cont"] = 1 - jnp.float32(cont)
+        losses = {k: -v.log_prob(data_img[k].astype("float32")) for k, v in img.items()}
+        metrics.update({f"openl_{k}_loss": v.mean() for k, v in losses.items()})
+        stats = balance_stats(img["reward"], data_img["reward"], 0.1)
+        metrics.update({f"openl_reward_{k}": v for k, v in stats.items()})
+        stats = balance_stats(img["cont"], data_img["cont"], 0.5)
+        metrics.update({f"openl_cont_{k}": v for k, v in stats.items()})
+
+        obs = rec["recon"].mode()[:6]
+        openl = img["recon"].mode()[:6]
+        true = data["observation"][:6]
+        pred = jnp.concatenate([obs, openl], 1)
+        error = (pred - true + 1) / 2
+        model_w_grid = jnp.concatenate(
+            [
+                add_colour_frame(obs.astype("float32"), colour="green"),
+                add_colour_frame(openl.astype("float32"), colour="red"),
+            ],
+            1,
+        )
+        video = jnp.concatenate([true, model_w_grid, error], 2)
+        report[f"openl_decoder"] = video_grid(video)
+
+        return report
+
     def report(self, modules, key, data):
-        report = modules["wm"].report(key, data)
+        report = self.jax_report(modules, key, data)
+        report = {f"report/{k}": np.float32(v) for k, v in report.items()}
         return report
