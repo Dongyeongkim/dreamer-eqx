@@ -227,7 +227,7 @@ class WorldModel(eqx.Module):
 
     def report(self, key, data):
         report = self.jax_report(key, data)
-        report = {k: np.float32(v) for k, v in report.items()}
+        report = {f"report/{k}": np.float32(v) for k, v in report.items()}
 
         return report
 

@@ -142,6 +142,7 @@ common:
     momentum: True
 
 report:
+  report_ratio: 10000
   report_openl_context: 8
 
 accelerator:

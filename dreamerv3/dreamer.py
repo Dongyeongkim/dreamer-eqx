@@ -128,7 +128,7 @@ class DreamerV3:
             wm_loss_key, carry, data
         )  # using wm_carry is available at the mode of 'last' mode. it will be added after few weeks.
         losses.update(wm_losses)
-        metrics.update(wm_metrics)
+        metrics.update({f"train/{k}": v for k, v in wm_metrics.items()})
         rew = data["reward"]
         con = 1 - jnp.float32(data["is_terminal"])
         B, T = data["is_first"].shape
@@ -151,7 +151,7 @@ class DreamerV3:
             ac_loss_key, modules["norms"], modules["wm"].imagine, start
         )
         losses.update(ac_losses)
-        metrics.update(ac_metrics)
+        metrics.update({f"train/{k}": v for k, v in ac_metrics.items()})
 
         if self.config.agent.replay_critic_loss:
             key, replay_ret_key = random.split(key, num=2)
@@ -164,12 +164,10 @@ class DreamerV3:
             )
             losses.update(replay_critic_loss)
             metrics.update(tensorstats(replay_ret_key, replay_ret, "replay_ret"))
-
-        metrics.update({f"{k}_loss": v.mean() for k, v in losses.items()})
-        metrics.update({f"{k}_loss_std": v.std() for k, v in losses.items()})
-
         scaled_losses = {k: v * self.scales[k] for k, v in losses.items()}
         loss = jnp.stack([v.mean() for v in scaled_losses.values()]).sum()
+        metrics.update({f"train/{k}_loss": v.mean() for k, v in scaled_losses.items()})
+        metrics.update({f"train/{k}_loss_std": v.std() for k, v in scaled_losses.items()})
 
         return loss, (modules["norms"], scaled_losses, metrics)
 
