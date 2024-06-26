@@ -35,7 +35,10 @@ def generate_dreamerV3_modules(key, obs_space, act_space, config):
             "advnorm": Moments(**config.agent.advnorm),
             "valnorm": Moments(**config.agent.valnorm),
         },
-        "updater": SlowUpdater(fraction=0.02),
+        "updater": SlowUpdater(
+            fraction=config.agent.slow_critic_fraction,
+            period=config.agent.slow_critic_update,
+        ),
     }
 
 
@@ -44,7 +47,7 @@ class DreamerV3:
         self.config = config
         self.obs_space = obs_space
         self.act_space = act_space
-        self.scales = self.config.loss_scales
+        self.scales = self.config.common.loss_scales
 
     def policy_initial(self, modules, batch_size):
         return (
@@ -55,7 +58,7 @@ class DreamerV3:
 
     def train_initial(self, modules, batch_size):
         return modules["wm"].initial(batch_size)
-    
+
     @eqx.filter_jit
     def policy(self, modules, key, state, obs, mode="train"):
         obs_key, act_key = random.split(key, num=2)
@@ -150,7 +153,7 @@ class DreamerV3:
         losses.update(ac_losses)
         metrics.update(ac_metrics)
 
-        if self.config.replay_critic_loss:
+        if self.config.agent.replay_critic_loss:
             key, replay_ret_key = random.split(key, num=2)
             ret = losses.pop("ret")
             data_with_wm_outs = {**data, **wm_outs}

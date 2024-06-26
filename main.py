@@ -6,9 +6,10 @@ def main(cfg):
 
     import os
     import ml_collections
+    from omegaconf import OmegaConf
 
-    config = ml_collections.ConfigDict(cfg)
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
+    config = ml_collections.ConfigDict(OmegaConf.to_container(cfg, resolve=True))
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.accelerator.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".90"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
@@ -50,10 +51,10 @@ def main(cfg):
     print("ReplayBuffer is generating")
 
     rb_state = generate_replaybuffer(
-        buffer_size=config.rb_size,
+        buffer_size=config.common.rb_size,
         desired_key_dim={
-            "deter": (config.rssm.deter,),
-            "stoch": (config.rssm.latent_dim, config.rssm.latent_cls),
+            "deter": (config.wm.deter,),
+            "stoch": (config.wm.latent_dim, config.wm.latent_cls),
             "observation": env.observation_space(env_params).shape,
             "reward": (),
             "is_first": (),
@@ -61,8 +62,8 @@ def main(cfg):
             "is_terminal": (),
             "action": (env.action_space(env_params).n,),
         },
-        batch_size=config.batch_size,
-        batch_length=config.batch_length,
+        batch_size=config.common.batch_size,
+        batch_length=config.common.batch_length,
         num_env=config.env.num_envs,
     )
 

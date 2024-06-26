@@ -2,7 +2,7 @@ import equinox as eqx
 from jax import random
 import jax.numpy as jnp
 from .models import ImagActorCritic, VFunction
-from .dreamerutils import OneHotDist, get_feat
+from .dreamerutils import OneHotDist
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions

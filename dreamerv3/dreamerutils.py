@@ -131,7 +131,12 @@ class Optimizer(eqx.Module):
         modules["norms"] = norms_and_loss_and_info[0]
         updates, opt_state = self.chain.update(grads, opt_state, modules)
         modules = eqx.apply_updates(modules, updates)
-        return modules, opt_state, total_loss, (norms_and_loss_and_info[1], norms_and_loss_and_info[2])
+        return (
+            modules,
+            opt_state,
+            total_loss,
+            (norms_and_loss_and_info[1], norms_and_loss_and_info[2]),
+        )
 
 
 # save and restore states

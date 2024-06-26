@@ -579,7 +579,7 @@ class ImageDecoder(eqx.Module):
                         transpose=True,
                         winit=winit,
                         pdtype=pdtype,
-                        cdtype=cdtype,
+                        cdtype="float32",
                     )
                 )
             else:

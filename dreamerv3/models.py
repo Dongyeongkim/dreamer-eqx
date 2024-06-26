@@ -5,18 +5,14 @@ from jax import random
 import jax.numpy as jnp
 from .dreamerutils import (
     MSEDist,
-    Moments,
     get_feat,
     tensorstats,
-    subsample,
     image_grid,
     add_colour_frame,
-    SlowUpdater,
 )
 from jax.tree_util import tree_map
 from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
-from typing import Callable
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
@@ -33,25 +29,25 @@ class WorldModel(eqx.Module):
         encoder_param_key, rssm_param_key, heads_param_key = random.split(key, num=3)
         self.obs_space = obs_space
         self.act_space = act_space
-        self.encoder = ImageEncoder(encoder_param_key, **config.encoder)
-        self.rssm = RSSM(rssm_param_key, action_dim=act_space, **config.rssm)
+        self.encoder = ImageEncoder(encoder_param_key, **config.wm.encoder)
+        self.rssm = RSSM(rssm_param_key, action_dim=act_space, **config.wm.rssm)
         dec_param_key, rew_param_key, cont_param_key = random.split(
             heads_param_key, num=3
         )
         self.heads = {
             "decoder": ImageDecoder(
                 dec_param_key,
-                **config.decoder,
+                **config.wm.decoder,
             ),
             "reward": MLP(
                 rew_param_key,
                 out_shape=(),
-                **config.reward_head,
+                **config.wm.reward_head,
             ),
             "cont": MLP(
                 cont_param_key,
                 out_shape=(),
-                **config.cont_head,
+                **config.wm.cont_head,
             ),
         }
         self.config = FrozenConfigDict(config)
@@ -88,9 +84,9 @@ class WorldModel(eqx.Module):
                 feat = get_feat(outs)
                 dist = head(feat)
             if log_name == "cont":
-                if self.config.contdisc:
+                if self.config.agent.contdisc:
                     softlabel = (1 - jnp.float32(data["is_terminal"])) * (
-                        1 - 1 / self.config.discount_horizon
+                        1 - 1 / self.config.agent.discount_horizon
                     )
                     losses.update(
                         {log_name: -dist.log_prob(softlabel.astype("float32"))}
@@ -109,6 +105,7 @@ class WorldModel(eqx.Module):
     def _metrics(self, data):
         metrics = {}
         metrics["data_rew/max"] = jnp.abs(data["reward"]).max()
+        metrics["data_rew/mean"] = data["reward"].mean()
         metrics["data_rew/std"] = data["reward"].std()
         return metrics
 
@@ -150,9 +147,13 @@ class WorldModel(eqx.Module):
         cont = self.heads["cont"](self.rssm.get_feat(traj)).mode()
         rew = self.heads["reward"](get_feat(traj)).mode()
         traj["cont"] = jnp.concatenate([first_cont[:, None], cont[:, 1:]], 1)
-        traj["reward"] = jnp.concatenate([startrew[:, None],  rew[:, 1:]], 1)
+        traj["reward"] = jnp.concatenate([startrew[:, None], rew[:, 1:]], 1)
 
-        discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
+        discount = (
+            1
+            if self.config.agent.contdisc
+            else 1 - 1 / self.config.agent.discount_horizon
+        )
         traj["weight"] = jnp.cumprod(discount * traj["cont"], 1) / discount
         return traj
 
@@ -268,7 +269,7 @@ class ImagActorCritic(eqx.Module):
         ents = actor.entropy()[
             :, :-1
         ]  # this part has been changed also for same reason
-        
+
         losses["actor"] = sg(traj["weight"][:, :-1]) * -(
             logpi * sg(adv_normed) + self.config.agent.actent * ents
         )  # this part also has been changed; will be same btw
@@ -283,7 +284,7 @@ class ImagActorCritic(eqx.Module):
             )[:, :-1]
         )
 
-        if self.config.replay_critic_loss:
+        if self.config.agent.replay_critic_loss:
             losses["ret"] = ret
 
         metrics = self._metrics(metric_key, adv, rew, val, ret, roffset, rscale, traj)
@@ -303,6 +304,8 @@ class ImagActorCritic(eqx.Module):
         metrics.update(
             tensorstats(ret_normed_key, (ret - roffset) / rscale, "ret_normed")
         )
+        if self.config.agent.replay_critic_loss:
+            pass
 
         metrics["td_error"] = jnp.abs(ret - val[:, :-1]).mean()
         metrics["ret_rate"] = (jnp.abs(ret) > 1.0).mean()
@@ -332,7 +335,11 @@ class VFunction(eqx.Module):
         val = critic.mean() * vscale + voffset
         slowval = slowcritic.mean() * vscale + voffset
         tarval = slowval if self.config.agent.slowtar else val
-        discount = 1 if self.config.contdisc else 1 - 1 / self.config.agent.horizon
+        discount = (
+            1
+            if self.config.agent.contdisc
+            else 1 - 1 / self.config.agent.discount_horizon
+        )
 
         rets = [tarval[:, -1]]
         disc = traj["cont"][:, 1:] * discount
@@ -346,17 +353,19 @@ class VFunction(eqx.Module):
     def replay_critic_loss(self, norms, traj, ret, update=True):
         losses = {}
         replay_critic = self.net(
-            get_feat(traj) if self.config.replay_critic_grad else sg(get_feat(traj))
+            get_feat(traj)
+            if self.config.agent.replay_critic_grad
+            else sg(get_feat(traj))
         )
         replay_slowcritic = self.slow(get_feat(traj))
 
         boot = dict(
             imag=ret[:, 0].reshape(traj["reward"].shape),
             critic=replay_critic.mean(),
-        )[self.config.replay_critic_bootstrap]
+        )[self.config.agent.replay_critic_bootstrap]
         rets = [boot[:, -1]]
         live = jnp.float32(~traj["is_terminal"])[:, 1:] * (
-            1 - 1 / self.config.discount_horizon
+            1 - 1 / self.config.agent.discount_horizon
         )
         cont = (
             jnp.float32(~traj["is_last"])[:, 1:]
