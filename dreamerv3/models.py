@@ -305,8 +305,7 @@ class ImagActorCritic(eqx.Module):
             val_key,
             ret_key,
             ret_normed_key,
-            replay_ret_key,
-        ) = random.split(key, num=8)
+        ) = random.split(key, num=7)
         metrics.update(tensorstats(adv_key, adv, "adv"))
         metrics.update(tensorstats(rew_key, rew, "rew"))
         metrics.update(tensorstats(weight_key, traj["weight"], "weight"))
