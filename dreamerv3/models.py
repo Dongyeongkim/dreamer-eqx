@@ -315,9 +315,6 @@ class ImagActorCritic(eqx.Module):
         metrics.update(
             tensorstats(ret_normed_key, (ret - roffset) / rscale, "ret_normed")
         )
-        if self.config.agent.replay_critic_loss:
-            metrics.update(tensorstats(replay_ret_key, "replay_ret"))
-
         metrics["td_error"] = jnp.abs(ret - val[:, :-1]).mean()
         metrics["ret_rate"] = (jnp.abs(ret) > 1.0).mean()
 
