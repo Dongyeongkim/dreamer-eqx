@@ -293,9 +293,16 @@ class ImagActorCritic(eqx.Module):
 
     def _metrics(self, key, adv, rew, val, ret, roffset, rscale, traj):
         metrics = {}
-        key, adv_key, rew_key, weight_key, val_key, ret_key, ret_normed_key = (
-            random.split(key, num=7)
-        )
+        (
+            key,
+            adv_key,
+            rew_key,
+            weight_key,
+            val_key,
+            ret_key,
+            ret_normed_key,
+            replay_ret_key,
+        ) = random.split(key, num=8)
         metrics.update(tensorstats(adv_key, adv, "adv"))
         metrics.update(tensorstats(rew_key, rew, "rew"))
         metrics.update(tensorstats(weight_key, traj["weight"], "weight"))
@@ -305,7 +312,7 @@ class ImagActorCritic(eqx.Module):
             tensorstats(ret_normed_key, (ret - roffset) / rscale, "ret_normed")
         )
         if self.config.agent.replay_critic_loss:
-            pass
+            metrics.update(tensorstats(replay_ret_key, "replay_ret"))
 
         metrics["td_error"] = jnp.abs(ret - val[:, :-1]).mean()
         metrics["ret_rate"] = (jnp.abs(ret) > 1.0).mean()
