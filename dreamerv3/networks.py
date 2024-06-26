@@ -579,7 +579,7 @@ class ImageDecoder(eqx.Module):
                         transpose=True,
                         winit=winit,
                         pdtype=pdtype,
-                        cdtype=cdtype,
+                        cdtype="float32",
                     )
                 )
             else:
@@ -842,7 +842,6 @@ class Dist(eqx.Module):
             self._std = eqx.nn.Identity()
 
     def __call__(self, inputs):
-        inputs = cast_to_compute(inputs, self.cdtype)
         dist = self.inner(inputs)
         return dist
 
