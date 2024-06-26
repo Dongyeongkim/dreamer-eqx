@@ -13,6 +13,8 @@ def train_and_evaluate_fn(
     num_steps,
     defrag_ratio,
     replay_ratio,
+    debug_mode,
+    report_ratio,
     logger,
     agent_fn,
     env_fn,
@@ -50,8 +52,20 @@ def train_and_evaluate_fn(
                 idx=idx,
                 **state
             )
-            if idx % 2 * replay_ratio == 0:
+            if debug_mode:
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
+
+        if idx % report_ratio == 0:
+            state["key"], report = report_fn(
+                agent_fn,
+                defrag_ratio,
+                replay_ratio,
+                state["key"],
+                state["agent_modules"],
+                state["rb_state"],
+                idx,
+            )
+            logger._write(report, env_fn.num_envs * idx)
 
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
@@ -121,6 +135,21 @@ def interaction_fn(
         "env_state": env_state,
         "rb_state": rb_state,
     }
+
+
+def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
+    key, report_key = random.split(key, num=2)
+    sampled_data = sampler(
+        idx,
+        rb_state.cache,
+        rb_state.deskeydim,
+        rb_state.batch_size_dict,
+        rb_state.batch_length_dict,
+        defrag_ratio,
+        replay_ratio,
+    )
+    report = agent_fn.report(agent_modules, report_key, sampled_data)
+    return key, report
 
 
 def train_agent_fn(

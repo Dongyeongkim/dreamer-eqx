@@ -92,6 +92,8 @@ def main(cfg):
         num_steps=int(config.env.num_interaction_steps//config.env.num_envs),
         defrag_ratio=1040,
         replay_ratio=(config.env.replay_ratio//config.env.num_envs),
+        debug_mode=config.report.debug_mode,
+        report_ratio=config.report.report_ratio,
         logger=logger,
         agent_fn=dreamer,
         env_fn=env,
