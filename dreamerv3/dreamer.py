@@ -208,7 +208,7 @@ class DreamerV3:
             obs_key,
             carry[0],
             data["action"][:, :num_obs],
-            eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(
+            eqx.filter_vmap(modules["wm"].encoder, in_axes=1, out_axes=1)(
                 data["observation"][:, :num_obs]
             ),
             data["is_first"][:, :num_obs],
@@ -224,8 +224,8 @@ class DreamerV3:
                 3,
                 "sum",
             ),
-            reward=self.heads["reward"](get_feat(rec_outs)),
-            cont=self.heads["cont"](get_feat(rec_outs)),
+            reward=modules["wm"].heads["reward"](get_feat(rec_outs)),
+            cont=modules["wm"].heads["cont"](get_feat(rec_outs)),
         )
         img = dict(
             recon=MSEDist(
@@ -235,8 +235,8 @@ class DreamerV3:
                 3,
                 "sum",
             ),
-            reward=self.heads["reward"](get_feat(img_outs)),
-            cont=self.heads["cont"](get_feat(img_outs)),
+            reward=modules["wm"].heads["reward"](get_feat(img_outs)),
+            cont=modules["wm"].heads["cont"](get_feat(img_outs)),
         )
         data_img = {k: v[:, num_obs:] for k, v in data.items()}
         data_img["recon"] = data_img["observation"]
