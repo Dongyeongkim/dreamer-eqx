@@ -159,20 +159,20 @@ class WorldModel(eqx.Module):
         return traj
 
     @eqx.filter_jit
-    def jax_report(self, key, data):
+    def jax_report(self, modules, key, data):
         report = {}
         loss_key, obs_key, oloop_key = random.split(key, num=3)
-        carry = self.initial(len(data["is_first"]))
+        carry = modules["wm"].initial(len(data["is_first"]))
 
         # Loss and metrics
-        losses, (loss_outs, carry_out, metrics) = self.loss(loss_key, carry, data)
+        losses, (loss_outs, carry_out, metrics) = modules["wm"].loss(loss_key, carry, data)
         report.update(metrics)
         report.update({f"{k}_loss": v.mean() for k, v in losses.items()})
 
         _, T = data["is_first"].shape
         num_obs = min(self.config.report.report_openl_context, T // 2)
 
-        img_start, rec_outs = self.rssm.observe(
+        img_start, rec_outs = modules["wm"].rssm.observe(
             obs_key,
             carry[0],
             data["action"][:, :num_obs],
@@ -181,18 +181,18 @@ class WorldModel(eqx.Module):
             ),
             data["is_first"][:, :num_obs],
         )
-        _, img_outs = self.rssm.imagine(
+        _, img_outs = modules["wm"].rssm.imagine(
             oloop_key, img_start, data["action"][:, num_obs:]
         )
         rec = dict(
-            recon=MSEDist(eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+            recon=MSEDist(eqx.filter_vmap(modules["wm"].heads["decoder"], in_axes=1, out_axes=1)(
                 rec_outs
             ), 3, "sum"),
             reward=self.heads["reward"](get_feat(rec_outs)),
             cont=self.heads["cont"](get_feat(rec_outs)),
         )
         img = dict(
-            recon=MSEDist(eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+            recon=MSEDist(eqx.filter_vmap(modules["wm"].heads["decoder"], in_axes=1, out_axes=1)(
                 img_outs
             ), 3, "sum"),
             reward=self.heads["reward"](get_feat(img_outs)),
@@ -226,8 +226,8 @@ class WorldModel(eqx.Module):
 
         return report
 
-    def report(self, key, data):
-        report = self.jax_report(key, data)
+    def report(self, modules, key, data):
+        report = self.jax_report(modules, key, data)
         report = {f"report/{k}": np.float32(v) for k, v in report.items()}
 
         return report
