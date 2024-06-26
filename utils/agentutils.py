@@ -9,6 +9,6 @@ def make_dreamer(env, config, key):
     modules = dreamerv3.generate_dreamerV3_modules(
         key, obs_space, act_space, config=config
     )
-    optim = Optimizer(lr=config.lr, scaler="rms", agc=0.3, eps=1e-20, momentum=True)
+    optim = Optimizer(**config.common.opt)
     opt_state = optim.init(modules)
     return dreamer, modules, optim, opt_state

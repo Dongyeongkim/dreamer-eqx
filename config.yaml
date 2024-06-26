@@ -1,49 +1,108 @@
+wm:
+  deter: 4096
+  latent_dim: 32
+  latent_cls: 32
+  hidden: 512
+  channel_depth: 32
+  channel_mults: [1, 2, 3, 4, 4]
+  cdtype: bfloat16
 
-encoder: {channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms,
-  winit: normal, outer: true, kernel_size: 5, stride: 2, minres: 4, cdtype: bfloat16}
-
-rssm: {deter: 4096, hidden: 512, latent_dim: 32, latent_cls: 32, channel_depth: 32,
-  channel_mults: [1, 2, 3, 4, 4], act: silu, norm: rms, unimix: 0.01, outscale: 1.0,
-  winit: normal, num_imglayer: 2, num_obslayer: 1, num_dynlayer: 1, blocks: 8, block_fans: false,
-  block_norm: false, cdtype: bfloat16}
-
-decoder: {deter: 4096, channel_depth: 32, channel_mults: [1, 2, 3, 4, 4], latent_dim: 32,
-  latent_cls: 32, num_units: 512, act: silu, norm: rms, winit: normal, outer: true, kernel_size: 5,
-  stride: 2, minres: 4, use_sigmoid: true, cdtype: bfloat16}
-
-reward_head: {num_layers: 1, in_features: 5120, num_units: 512, act: silu, norm: rms, dist: symexp_twohot,
-  outscale: 0.0, winit: normal, cdtype: bfloat16}
-
-cont_head: {num_layers: 1, in_features: 5120, num_units: 512, act: silu, norm: rms, dist: binary, outscale: 1.0, 
-  winit: normal, cdtype: bfloat16}
-
-contdisc: true
-discount_horizon: 333
-loss_scales: {recon: 1.0, reward: 1.0, cont: 1.0, dyn: 1.0, rep: 0.1, actor: 1.0,
-  critic: 1.0, replay_critic: 0.3}
-slow_critic_update: 1
-slow_critic_fraction: 0.02
-
-replay_critic_loss: True
-replay_critic_grad: True
-replay_critic_bootstrap: imag
-
-
-seed: 0
-gpu_id: 0
-lr: 4e-5
-rb_size: 1e6
-batch_size: 16
-batch_length: 65 
-
+  encoder:
+    channel_depth: ${wm.channel_depth}
+    channel_mults: ${wm.channel_mults}
+    act: silu
+    norm: rms
+    winit: normal
+    outer: true
+    kernel_size: 5
+    stride: 2
+    minres: 4
+    cdtype: ${wm.cdtype}
+  rssm: 
+    deter: ${wm.deter}
+    hidden: ${wm.hidden}
+    latent_dim: ${wm.latent_dim}
+    latent_cls: ${wm.latent_cls}
+    channel_depth:  ${wm.channel_depth}
+    channel_mults: ${wm.channel_mults} 
+    act: silu
+    norm: rms
+    unimix: 0.01 
+    outscale: 1.0
+    winit: normal
+    num_imglayer: 2 
+    num_obslayer: 1 
+    num_dynlayer: 1 
+    blocks: 8 
+    block_fans: false
+    block_norm: false 
+    cdtype: ${wm.cdtype}
+  decoder: 
+    deter: ${wm.deter}
+    channel_depth: ${wm.channel_depth}
+    channel_mults: ${wm.channel_mults}
+    latent_dim: ${wm.latent_dim}
+    latent_cls: ${wm.latent_cls}
+    num_units: ${wm.hidden}
+    act: silu
+    norm: rms 
+    winit: normal
+    outer: true
+    kernel_size: 5 
+    stride: 2 
+    minres: 4 
+    use_sigmoid: true 
+    cdtype: ${wm.cdtype}
+  reward_head: 
+    num_layers: 1 
+    in_features: 5120
+    num_units: ${wm.hidden} 
+    act: silu 
+    norm: rms 
+    dist: symexp_twohot 
+    outscale: 0.0 
+    winit: normal 
+    cdtype: ${wm.cdtype}
+  cont_head: 
+    num_layers: 1
+    in_features: 5120
+    num_units: ${wm.hidden} 
+    act: silu 
+    norm: rms 
+    dist: binary 
+    outscale: 1.0
+    winit: normal 
+    cdtype: ${wm.cdtype}
 agent:
   task_behavior: Greedy
   expl_behavior: None
   critic_type: vfunction
-  actor: {num_layers: 3, num_units: 512, act: silu, norm: rms, dist: onehot, minstd: 0.1,
-    maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: normal, in_features: 5120}
-  critic: {num_layers: 3, num_units: 512, act: silu, norm: rms, dist: symexp_twohot,
-    outscale: 0.0, winit: normal, bins: 255, in_features: 5120}
+  cdtype: bfloat16
+  actor: 
+    num_layers: 3
+    num_units: ${wm.hidden}
+    act: silu
+    norm: rms
+    dist: onehot
+    minstd: 0.1
+    maxstd: 1.0 
+    outscale: 0.01
+    unimix: 0.01
+    winit: normal
+    in_features: 5120
+    cdtype: ${agent.cdtype}
+  critic: 
+    num_layers: 3
+    num_units: ${wm.hidden}
+    act: silu
+    norm: rms
+    dist: symexp_twohot
+    outscale: 0.0
+    winit: normal
+    bins: 255
+    in_features: 5120
+    cdtype: ${agent.cdtype}
+
   actor_dist_disc: onehot
   actor_dist_cont: normal
   actent: 3e-4
@@ -52,10 +111,38 @@ agent:
   retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0}
   valnorm: {impl: "off", rate: 0.01, limit: 1e-8}
   advnorm: {impl: "off", rate: 0.01, limit: 1e-8}
+  contdisc: true
   imag_horizon: 15
-  horizon: 333
+  discount_horizon: 333
   return_lambda: 0.95
   return_lambda_replay: 0.95
+  replay_critic_loss: true
+  replay_critic_grad: true
+  replay_critic_bootstrap: imag
+  slow_critic_fraction: 0.02
+  slow_critic_update: 1
+common:
+  rb_size: 1e6
+  batch_size: 16
+  batch_length: 65
+  loss_scales: 
+    recon: 1.0
+    reward: 1.0
+    cont: 1.0
+    dyn: 1.0
+    rep: 0.1
+    actor: 1.0
+    critic: 1.0 
+    replay_critic: 0.3
+  opt:
+    lr: 4e-5
+    scaler: rms
+    agc: 0.3
+    eps: 1e-20
+    momentum: True
+
+accelerator:
+  gpu_id: 0
 env:
   env_name: Craftax-Classic-Pixels-v1
   autoreset: true
@@ -63,6 +150,8 @@ env:
   replay_ratio: 512
   num_interaction_steps: 1.1e6
 
+seed: 0
+
 hydra:
   run:
-    dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_rssm_detersize_${rssm.deter}
+    dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}
