@@ -173,14 +173,6 @@ class DreamerV3:
 
         return loss, (modules["norms"], scaled_losses, metrics)
 
-    def report(self, modules, key, carry, data):
-        wm_report_key, predict_err_key = random.split(key, num=2)
-        context_data = data.copy()
-        context = {
-            k: context_data.pop(k)[:, :1] for k in modules["wm"].rssm.initial(1).keys()
-        }
-        prevlat = modules["wm"].rssm.outs_to_carry(context)
-        data = {k: v[:, 1:] for k, v in data.items()}
-
-        report = modules["wm"].report(wm_report_key, prevlat, data)
-        pass
+    def report(self, modules, key, data):
+        report = modules["wm"].report(key, data)
+        return report

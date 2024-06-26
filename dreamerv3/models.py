@@ -159,9 +159,10 @@ class WorldModel(eqx.Module):
         return traj
 
     @eqx.filter_jit
-    def jax_report(self, key, carry, data):
+    def jax_report(self, key, data):
         report = {}
         loss_key, obs_key, oloop_key = random.split(key, num=3)
+        carry = self.initial(len(data["is_first"]))
 
         # Loss and metrics
         losses, (loss_outs, carry_out, metrics) = self.loss(loss_key, carry, data)
@@ -220,12 +221,12 @@ class WorldModel(eqx.Module):
             1,
         )
         video = jnp.concatenate([true, model_w_grid, error], 2)
-        report[f"openloop/decoder"] = video_grid(video)
+        report[f"openl_decoder"] = video_grid(video)
 
         return report
 
-    def report(self, key, carry, data):
-        report = self.jax_report(key, carry, data)
+    def report(self, key, data):
+        report = self.jax_report(key, data)
         report = {k: np.float32(v) for k, v in report.items()}
 
         return report
