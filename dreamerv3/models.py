@@ -7,7 +7,8 @@ from .dreamerutils import (
     MSEDist,
     get_feat,
     tensorstats,
-    image_grid,
+    balance_stats,
+    video_grid,
     add_colour_frame,
 )
 from jax.tree_util import tree_map
@@ -158,71 +159,73 @@ class WorldModel(eqx.Module):
         return traj
 
     @eqx.filter_jit
-    def jax_report(self, key, data):
+    def jax_report(self, key, carry, data):
         report = {}
-        loss_key, obs_key, oloop_key, img_key = random.split(key, num=4)
-        state = self.initial(len(data["is_first"]))
-        losses, metrics = self.loss(loss_key, data, state)
-        report.update({f"{k}_loss": v.sum(axis=-1).mean() for k, v in losses.items()})
+        loss_key, obs_key, oloop_key = random.split(key, num=3)
+
+        # Loss and metrics
+        losses, (loss_outs, carry_out, metrics) = self.loss(loss_key, carry, data)
         report.update(metrics)
-        carry, outs = self.rssm.observe(
+        report.update({f"{k}_loss": v.mean() for k, v in losses.items()})
+
+        _, T = data["is_first"].shape
+        num_obs = min(self.config.report.report_openl_context, T // 2)
+
+        img_start, rec_outs = self.rssm.observe(
             obs_key,
-            self.rssm.initial(8),
-            data["action"][:8, ...],
-            eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-                :8, ...
-            ],
-            data["is_first"][:8, ...],
+            carry[0],
+            data["action"][:, :num_obs],
+            eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(
+                data["image"][:, :num_obs]
+            ),
+            data["is_first"][:, :num_obs],
         )
-
-        truth = data["image"][:8].astype("float32")
-        full_recon = eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
-            outs
-        ).astype("float32")
-        error = (full_recon - truth + 1) / 2
-        recon_video = jnp.concatenate(
-            [truth, add_colour_frame(full_recon, colour="green"), error], 2
+        _, img_outs = self.rssm.imagine(
+            oloop_key, img_start, data["action"][:, num_obs:]
         )
-
-        report[f"recon_video"] = recon_video
-
-        carry, outs = self.rssm.observe(
-            oloop_key,
-            self.rssm.initial(8),
-            data["action"][:8, :5, ...],
-            eqx.filter_vmap(self.encoder, in_axes=1, out_axes=1)(data["image"])[
-                :8, :5, ...
-            ],
-            data["is_first"][:8, :5, ...],
+        rec = dict(
+            recon=eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+                rec_outs
+            ),
+            reward=self.heads["reward"](rec_outs),
+            cont=self.heads["cont"](rec_outs),
         )
+        img = dict(
+            recon=eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
+                img_outs
+            ),
+            reward=self.heads["reward"](img_outs),
+            cont=self.heads["cont"](img_outs),
+        )
+        data_img = {k: v[:, num_obs:] for k, v in data.items()}
+        cont = data_img.pop("is_terminal")
+        data_img["cont"] = 1 - jnp.float32(cont)
+        losses = {k: -v.log_prob(data_img[k].astype("float32")) for k, v in img.items()}
+        metrics.update({f"openl_{k}_loss": v.mean() for k, v in losses.items()})
+        stats = balance_stats(img["reward"], data_img["reward"], 0.1)
+        metrics.update({f"openl_reward_{k}": v for k, v in stats.items()})
+        stats = balance_stats(img["cont"], data_img["cont"], 0.5)
+        metrics.update({f"openl_cont_{k}": v for k, v in stats.items()})
 
-        recon = eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
-            outs
-        ).astype("float32")
-
-        _, states = self.rssm.imagine(img_key, carry, data["action"][:8, 5:, ...])
-
-        openl = eqx.filter_vmap(self.heads["decoder"], in_axes=1, out_axes=1)(
-            states
-        ).astype("float32")
-        model = jnp.concatenate([recon[:, :5], openl], 1)
-        error = (model - truth + 1) / 2
+        obs = rec["recon"][:6]
+        openl = img["recon"][:6]
+        true = data["image"][:6]
+        pred = jnp.concatenate([obs, openl], 1)
+        error = (pred - true + 1) / 2
         model_w_grid = jnp.concatenate(
             [
-                add_colour_frame(recon[:, :5], colour="green"),
-                add_colour_frame(openl, colour="red"),
+                add_colour_frame(obs, colour="green"),
+                add_colour_frame(img, colour="red"),
             ],
             1,
         )
-
-        video = jnp.concatenate([truth, model_w_grid, error], 2)
-        report[f"openl_video"] = video
-        report[f"openl_image"] = image_grid(video)
+        video = jnp.concatenate([true, model_w_grid, error], 2)
+        report[f"openloop/decoder"] = video_grid(video)
 
         return report
 
-    def report(self, key, data):
-        report = self.jax_report(key, data)
+    def report(self, key, carry, data):
+        report = self.jax_report(key, carry, data)
         report = {k: np.float32(v) for k, v in report.items()}
 
         return report

@@ -189,12 +189,12 @@ def restorekey(var_impl_dict):
     return jax.random.wrap_key_data(var_impl_dict["var"], impl=var_impl_dict["impl"])
 
 
-# image grid
+# video grid
 
 
-def image_grid(video):
+def video_grid(video):
     B, T, H, W, C = video.shape
-    return video.transpose((0, 2, 1, 3, 4)).reshape((B * H, T * W, C))
+    return video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
 
 
 # add colour frame, you SHOULD ADD JIT HERE; if it is not it will result OOM at last(due to copy)
@@ -209,10 +209,10 @@ def add_colour_frame(image, colour):
     else:
         raise NotImplementedError
 
-    image = image.at[:, :, :2, :].set(colour)
-    image = image.at[:, :, -2:, :].set(colour)
-    image = image.at[:, :, :, :2].set(colour)
-    image = image.at[:, :, :, -2:].set(colour)
+    image = image.at[:, :, :1, :].set(colour)
+    image = image.at[:, :, -1:, :].set(colour)
+    image = image.at[:, :, :, :1].set(colour)
+    image = image.at[:, :, :, -1:].set(colour)
 
     return image
 
@@ -256,6 +256,28 @@ def get_feat(state):
 def cast_to_compute(values, compute_dtype):
     return jax.tree_util.tree_map(
         lambda x: x if x.dtype == compute_dtype else x.astype(compute_dtype), values
+    )
+
+
+# balance stats
+
+
+def balance_stats(dist, target, thres):
+    # Values are NaN when there are no positives or negatives in the current
+    # batch, which means they will be ignored when aggregating metrics via
+    # np.nanmean() later, as they should.
+    pos = (target.astype("float32") > thres).astype("float32")
+    neg = (target.astype("float32") <= thres).astype("float32")
+    pred = (dist.mean().astype("float32") > thres).astype("float32")
+    loss = -dist.log_prob(target)
+    return dict(
+        pos_loss=(loss * pos).sum() / pos.sum(),
+        neg_loss=(loss * neg).sum() / neg.sum(),
+        pos_acc=(pred * pos).sum() / pos.sum(),
+        neg_acc=((1 - pred) * neg).sum() / neg.sum(),
+        rate=pos.mean(),
+        avg=target.astype("float32").mean(),
+        pred=dist.mean().astype("float32").mean(),
     )
 
 

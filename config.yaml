@@ -141,6 +141,9 @@ common:
     eps: 1e-20
     momentum: True
 
+report:
+  report_openl_context: 8
+
 accelerator:
   gpu_id: 0
 env:
