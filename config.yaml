@@ -152,8 +152,8 @@ env:
   env_name: Craftax-Classic-Pixels-v1
   autoreset: true
   num_envs: 1
-  replay_ratio: 512
-  num_interaction_steps: 1.1e6
+  replay_ratio: 64
+  num_interaction_steps: 10e6
 
 seed: 0
 
