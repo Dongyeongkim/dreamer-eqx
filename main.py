@@ -17,6 +17,7 @@ def main(cfg):
     from utils.envutils import make_craftax_env
     from utils.agentutils import make_dreamer
     from utils.trainutils import prefill_fn, train_and_evaluate_fn
+    from utils.evalutils import craftax_eval_fn
     from dreamerv3.replay import generate_replaybuffer
 
     logger = Logger(path)
@@ -29,6 +30,7 @@ def main(cfg):
     print(f"Building the Environment...")
 
     env = make_craftax_env(**config.env)
+    eval_env = make_craftax_env(env_name=config.env.env_name, autoreset=config.env.autoreset, eval_mode=True)
 
     print(f"Done!")
 
@@ -74,7 +76,7 @@ def main(cfg):
     key, prefill_key = jax.random.split(key)
     rb_state = prefill_fn(
         prefill_key,
-        1040,
+        config.common.batch_size * config.common.batch_length,
         dreamer,
         env,
         opt_fn,
@@ -90,14 +92,17 @@ def main(cfg):
     state = train_and_evaluate_fn(
         key=training_key,
         num_steps=int(config.env.num_interaction_steps//config.env.num_envs),
-        defrag_ratio=1040,
+        defrag_ratio=config.common.batch_size * config.common.batch_length,
         replay_ratio=(config.env.replay_ratio//config.env.num_envs),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,
+        eval_ratio=config.report.eval_ratio,
         logger=logger,
         agent_fn=dreamer,
         env_fn=env,
         opt_fn=opt_fn,
+        eval_fn=craftax_eval_fn,
+        eval_env_fn=eval_env,
         agent_modules=dreamer_modules,
         agent_state=dreamer_state,
         env_params=env_params,

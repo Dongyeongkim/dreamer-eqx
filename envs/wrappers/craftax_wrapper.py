@@ -1,6 +1,8 @@
 import jax
+import chex
 import jax.numpy as jnp
 from functools import partial
+from typing import Any, Union
 
 
 class GymnaxWrapper(object):
@@ -167,6 +169,7 @@ class CraftaxWrapper(GymnaxWrapper):
         obs, env_state, reward, done, info = self._env.step(
             rng, env_state, action, params
         )
+
         return env_state, {
             "observation": jax.image.resize(
                 obs,
@@ -177,4 +180,42 @@ class CraftaxWrapper(GymnaxWrapper):
             "is_first": jnp.bool(jnp.maximum(env_state.timestep, 0)),
             "is_last": done,
             "is_terminal": jnp.bool(info["discount"]),
+        }
+
+
+class CraftaxEvalWrapper(GymnaxWrapper):
+    def __init__(self, env, shape=(64, 64)):
+        self._shape = shape
+        super().__init__(env)
+
+    def reset(self, rng, params=None):
+        obs, env_state = self._env.reset(rng, params)
+        return env_state, {
+            "observation": jax.image.resize(
+                obs,
+                (obs.shape[0], self._shape[0], self._shape[1], obs.shape[3]),
+                "nearest",
+            ),
+            "reward": jnp.zeros((self.num_envs,)),
+            "is_first": jnp.bool(jnp.ones((self.num_envs,))),
+            "is_last": jnp.bool(jnp.zeros((self.num_envs,))),
+            "is_terminal": jnp.zeros((self.num_envs,)),
+        }
+
+    def step(self, rng, env_state, action, params=None):
+        obs, env_state, reward, done, info = self._env.step(
+            rng, env_state, action, params
+        )
+
+        return env_state, {
+            "observation": jax.image.resize(
+                obs,
+                (obs.shape[0], self._shape[0], self._shape[1], obs.shape[3]),
+                "nearest",
+            ),
+            "reward": reward,
+            "is_first": jnp.bool(jnp.maximum(env_state.timestep, 0)),
+            "is_last": done,
+            "is_terminal": jnp.bool(info["discount"]),
+            **info,
         }

@@ -15,10 +15,13 @@ def train_and_evaluate_fn(
     replay_ratio,
     debug_mode,
     report_ratio,
+    eval_ratio,
     logger,
     agent_fn,
     env_fn,
     opt_fn,
+    eval_fn,
+    eval_env_fn,
     agent_modules,
     agent_state,
     env_params,
@@ -26,8 +29,9 @@ def train_and_evaluate_fn(
     opt_state,
     rb_state,
 ):
+    training_key, report_key, eval_key = random.split(key, num=3)
     state = {
-        "key": key,
+        "key": training_key,
         "agent_modules": agent_modules,
         "agent_state": agent_state,
         "opt_state": opt_state,
@@ -56,16 +60,22 @@ def train_and_evaluate_fn(
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
 
         if idx % report_ratio == 0:
-            state["key"], report = report_fn(
+            report_key, report = report_fn(
                 agent_fn,
                 defrag_ratio,
                 replay_ratio,
-                state["key"],
+                report_key,
                 state["agent_modules"],
                 state["rb_state"],
                 idx,
             )
             logger._write(report, env_fn.num_envs * idx)
+
+        if idx % eval_ratio == 0:
+            eval_key, eval_report = eval_fn(
+                agent_fn, eval_env_fn, eval_key, state["agent_modules"], env_params
+            )
+            logger._write(eval_report, env_fn.num_envs * idx)
 
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
