@@ -1,8 +1,8 @@
 wm:
   deter: 8192
+  hidden: 1024
   latent_dim: 32
   latent_cls: 64
-  hidden: 1024
   channel_depth: 64
   channel_mults: [1, 2, 3, 4, 4]
   cdtype: bfloat16
