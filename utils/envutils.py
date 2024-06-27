@@ -5,6 +5,7 @@ from envs.wrappers.craftax_wrapper import (
     BatchEnvWrapper,
     OptimisticResetVecEnvWrapper,
     CraftaxWrapper,
+    CraftaxEvalWrapper,
 )
 
 
@@ -22,7 +23,9 @@ def make_dmc_env(env_name: str, **kwargs):
     return env
 
 
-def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, **kwargs):
+def make_craftax_env(
+    env_name: str, autoreset: bool, num_envs: int = 1, eval_mode=False, **kwargs
+):
     assert num_envs > 0, "number of the environments must be greater or equal than 1"
 
     env = make_craftax_env_from_name(env_name, not autoreset)
@@ -32,6 +35,9 @@ def make_craftax_env(env_name: str, autoreset: bool, num_envs: int = 1, **kwargs
         )
     else:
         env = BatchEnvWrapper(env)
-    env = CraftaxWrapper(env)
+    if eval_mode:
+        env = CraftaxEvalWrapper(env)
+    else:
+        env = CraftaxWrapper(env)
 
     return env

@@ -143,6 +143,7 @@ common:
 
 report:
   debug_mode: true
+  eval_ratio: 10000
   report_ratio: 10000
   report_openl_context: 8
 
