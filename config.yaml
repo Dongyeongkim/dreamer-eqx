@@ -1,9 +1,9 @@
 wm:
-  deter: 4096
+  deter: 8192
   latent_dim: 32
-  latent_cls: 32
-  hidden: 512
-  channel_depth: 32
+  latent_cls: 64
+  hidden: 1024
+  channel_depth: 64
   channel_mults: [1, 2, 3, 4, 4]
   cdtype: bfloat16
 
@@ -55,7 +55,7 @@ wm:
     cdtype: ${wm.cdtype}
   reward_head: 
     num_layers: 1 
-    in_features: 5120
+    in_features: 10240
     num_units: ${wm.hidden} 
     act: silu 
     norm: rms 
