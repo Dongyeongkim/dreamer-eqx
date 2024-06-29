@@ -10,7 +10,6 @@ def main(cfg):
 
     config = ml_collections.ConfigDict(OmegaConf.to_container(cfg, resolve=True))
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.accelerator.gpu_id)
-    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".90"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
     from utils.logger import Logger
@@ -56,7 +55,7 @@ def main(cfg):
         buffer_size=config.common.rb_size,
         desired_key_dim={
             "deter": (config.wm.deter,),
-            "stoch": (config.wm.latent_dim, config.wm.latent_cls),
+            "stoch": (config.wm.latent_dim,),
             "observation": env.observation_space(env_params).shape,
             "reward": (),
             "is_first": (),

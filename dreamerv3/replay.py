@@ -1,22 +1,15 @@
 import jax
+import chex
 import einops
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
+from jax.core import ShapedArray
+from jax._src.lib import xla_client as xc
+from jax.sharding import SingleDeviceSharding
 from jax.tree_util import tree_map, tree_structure, tree_leaves, tree_unflatten
 
 from typing import Dict
-
-import chex
-
-
-cpu_data = lambda data: jax.lax.with_sharding_constraint(
-    data, jax.sharding.SingleDeviceSharding(jax.devices("cpu")[0])
-)
-
-gpu_data = lambda data: jax.lax.with_sharding_constraint(
-    data, jax.sharding.SingleDeviceSharding(jax.devices("gpu")[0])
-)
 
 
 @chex.dataclass
@@ -198,7 +191,9 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         idxes_dict,
         buffer_state.deskeydim,
     )
-    prechunks_cpu = putarray(prechunks, jax.devices("cpu")[0])
+    prechunks_cpu = tree_map(
+        lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
+    )
     if bufferlen:
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
     else:
@@ -239,7 +234,11 @@ def tree_concat(trees):
 
 
 def putarray(data, device):
-    return jax.device_put(data, device)
+    # https://github.com/google/jax/issues/16905; faster device_put
+    aval = ShapedArray(data.shape, data.dtype)
+    return xc.batched_device_put(
+        aval, SingleDeviceSharding(device), [data], [device], True
+    )
 
 
 def optimisedgetchunk(data, chunk_length: int):
