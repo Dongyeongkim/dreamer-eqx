@@ -1,19 +1,12 @@
 import jax
-import numpy as np
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
-from .dreamerutils import (
-    MSEDist,
-    get_feat,
-    tensorstats,
-    balance_stats,
-    video_grid,
-    add_colour_frame,
-)
 from jax.tree_util import tree_map
-from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
 from ml_collections import FrozenConfigDict
+from .dreamerutils import MSEDist, get_feat, tensorstats
+from .networks import RSSM, ImageEncoder, ImageDecoder, MLP
+
 
 sg = lambda x: jax.tree_util.tree_map(jax.lax.stop_gradient, x)
 
@@ -43,11 +36,17 @@ class WorldModel(eqx.Module):
             "reward": MLP(
                 rew_param_key,
                 out_shape=(),
+                in_features=(
+                    config.wm.latent_dim * config.wm.latent_cls + config.wm.deter
+                ),
                 **config.wm.reward_head,
             ),
             "cont": MLP(
                 cont_param_key,
                 out_shape=(),
+                in_features=(
+                    config.wm.latent_dim * config.wm.latent_cls + config.wm.deter
+                ),
                 **config.wm.cont_head,
             ),
         }
@@ -169,6 +168,7 @@ class ImagActorCritic(eqx.Module):
             key,
             **config.agent.actor,
             out_shape=(act_space,) if isinstance(act_space, int) else act_space,
+            in_features=(config.wm.latent_dim * config.wm.latent_cls + config.wm.deter),
         )
         self.critic = critics
         self.config = FrozenConfigDict(config)
@@ -258,8 +258,18 @@ class VFunction(eqx.Module):
 
     def __init__(self, key, config):
         net_key, slow_key = random.split(key, num=2)
-        self.net = MLP(net_key, out_shape=(), **config.agent.critic)
-        self.slow = MLP(slow_key, out_shape=(), **config.agent.critic)
+        self.net = MLP(
+            net_key,
+            out_shape=(),
+            in_features=(config.wm.latent_dim * config.wm.latent_cls + config.wm.deter),
+            **config.agent.critic,
+        )
+        self.slow = MLP(
+            slow_key,
+            out_shape=(),
+            in_features=(config.wm.latent_dim * config.wm.latent_cls + config.wm.deter),
+            **config.agent.critic,
+        )
         self.config = FrozenConfigDict(config)
 
     def score(self, valnorm, traj, actor=None):

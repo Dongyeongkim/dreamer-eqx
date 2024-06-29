@@ -361,11 +361,6 @@ class RSSM(eqx.Module):
         metrics.update(tensorstats(key, self._dist(outs["post"]).entropy(), "post_ent"))
         return {"dyn": dyn, "rep": rep}, metrics
 
-    def get_feat(self, state):
-        return jnp.concatenate(
-            [state["stoch"].reshape(*state["stoch"].shape[:-2], -1), state["deter"]], -1
-        )
-
     def _prior(self, feat):
         x = feat
         for layer in self.imglayers["img"]:

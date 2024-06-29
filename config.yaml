@@ -54,8 +54,7 @@ wm:
     use_sigmoid: true 
     cdtype: ${wm.cdtype}
   reward_head: 
-    num_layers: 1 
-    in_features: 10240
+    num_layers: 1
     num_units: ${wm.hidden} 
     act: silu 
     norm: rms 
@@ -65,7 +64,6 @@ wm:
     cdtype: ${wm.cdtype}
   cont_head: 
     num_layers: 1
-    in_features: 10240
     num_units: ${wm.hidden} 
     act: silu 
     norm: rms 
@@ -89,7 +87,6 @@ agent:
     outscale: 0.01
     unimix: 0.01
     winit: normal
-    in_features: 10240
     cdtype: ${agent.cdtype}
   critic: 
     num_layers: 3
@@ -100,7 +97,6 @@ agent:
     outscale: 0.0
     winit: normal
     bins: 255
-    in_features: 10240
     cdtype: ${agent.cdtype}
 
   actor_dist_disc: onehot
