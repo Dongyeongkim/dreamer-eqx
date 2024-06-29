@@ -55,7 +55,7 @@ def main(cfg):
         buffer_size=config.common.rb_size,
         desired_key_dim={
             "deter": (config.wm.deter,),
-            "stoch": (config.wm.latent_dim, config.wm.latent_cls),
+            "stoch": (config.wm.latent_dim,),
             "observation": env.observation_space(env_params).shape,
             "reward": (),
             "is_first": (),

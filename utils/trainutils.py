@@ -1,6 +1,6 @@
 import tqdm
-import jax
 from jax import random
+import jax.numpy as jnp
 from dreamerv3.replay import defragmenter, pushstep, sampler
 
 # rollout_fn
@@ -130,7 +130,7 @@ def interaction_fn(
         env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
     )
     timestep["deter"] = agent_state[0][0]["deter"]
-    timestep["stoch"] = agent_state[0][0]["stoch"]
+    timestep["stoch"] = jnp.argmax(agent_state[0][0]["stoch"], -1).astype(jnp.int32)
     timestep["action"] = agent_state[0][1]
     agent_state, outs = agent_fn.policy(
         agent_modules, policy_key, agent_state, timestep

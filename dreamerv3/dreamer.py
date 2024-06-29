@@ -103,6 +103,9 @@ class DreamerV3:
         context = {
             k: context_data.pop(k)[:, :1] for k in modules["wm"].rssm.initial(1).keys()
         }
+        context["stoch"] = jax.nn.one_hot(
+            context["stoch"], self.config.wm.latent_cls
+        ).astype(self.config.wm.cdtype)
         prevlat = modules["wm"].rssm.outs_to_carry(context)
         prevact = data["action"][:, 0]
         carry = prevlat, prevact

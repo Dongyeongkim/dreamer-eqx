@@ -191,7 +191,9 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         idxes_dict,
         buffer_state.deskeydim,
     )
-    prechunks_cpu = tree_map(lambda val: putarray(val, jax.devices("cpu")[0]), prechunks)
+    prechunks_cpu = tree_map(
+        lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
+    )
     if bufferlen:
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
     else:
