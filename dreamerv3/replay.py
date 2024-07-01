@@ -90,7 +90,6 @@ def chunking(
     return splitpoint, prechunk
 
 
-@eqx.filter_jit
 def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
     def apply_cond(p, *x):
         return jax.lax.cond(p, true_fun, false_fun, *x)
@@ -111,7 +110,6 @@ def get_from_buffer(idxes, buffer):
     return buffer
 
 
-@eqx.filter_jit
 def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
     preds = tree_map(
         lambda idx, blen: jnp.greater_equal(idx, blen),
@@ -202,7 +200,6 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
     return key, buffer_state
 
 
-@eqx.filter_jit
 def sampler(
     idx,
     cache,
@@ -237,11 +234,6 @@ def putarray(data, device):
     return jax.device_put(data, device)
 
 
-def optimisedgetchunk(data, chunk_length: int):
-    chunks = jnp.array_split(data, jnp.arange(chunk_length, len(data), chunk_length))
-    return chunks
-
-
 def transform2ds(data: jnp.array, expected_dim: int):
     # IMPORTANT: EXPECTED SHAPE -> (T, B, ...)
     assert (
@@ -268,38 +260,3 @@ def transform2batch(
         b=batch_size,
         t=batch_length,
     )
-
-
-@eqx.filter_jit
-def testfunc(key, buffer_ds):
-    for i in range(2000):
-        buffer_ds = pushstep(
-            buffer_ds, {"obs": jnp.zeros((16, 64, 64, 3)), "action": jnp.zeros((16, 6))}
-        )
-        key, sampling_key = random.split(key)
-        data = sampler(sampling_key, buffer_ds)
-        if i % 65 == 0 and i != 0:
-            buffer_ds = defragmenter(buffer_ds)
-    return buffer_ds
-
-
-if __name__ == "__main__":
-    buffer_ds = generate_replaybuffer(
-        buffer_size=1_000_000,
-        desired_key_dim={"obs": (64, 64, 3), "action": (6,)},
-        batch_size=16,
-        batch_length=65,
-        num_env=16,
-    )
-    for i in range(65):
-        buffer_ds = pushstep(
-            buffer_ds, {"obs": jnp.zeros((16, 64, 64, 3)), "action": jnp.zeros((16, 6))}
-        )
-    buffer_ds = defragmenter(buffer_ds)
-    import time
-
-    a = time.time()
-    buffer_ds = testfunc(jax.random.key(0), buffer_ds)
-    b = time.time()
-    print(16 * 1000 / (b - a))
-    print(buffer_ds.buffer["action"].shape)
