@@ -72,10 +72,8 @@ def train_and_evaluate_fn(
             logger._write(report, env_fn.num_envs * idx)
 
         if idx % eval_ratio == 0:
-            eval_key, eval_report = eval_fn(
-                agent_fn, eval_env_fn, eval_key, state["agent_modules"], env_params
-            )
-            logger._write(eval_report, env_fn.num_envs * idx)
+            report = eval_fn(agent_fn, env_fn, key, agent_modules, env_params)
+            logger._write(report, env_fn.num_envs * idx)
 
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state

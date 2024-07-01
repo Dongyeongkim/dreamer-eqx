@@ -1,8 +1,8 @@
 import jax
-import chex
 import jax.numpy as jnp
 from functools import partial
-from typing import Any, Union
+from craftax.craftax_classic.constants import Achievement
+
 
 
 class GymnaxWrapper(object):
@@ -148,6 +148,7 @@ class OptimisticResetVecEnvWrapper(GymnaxWrapper):
 
 class CraftaxWrapper(GymnaxWrapper):
     def __init__(self, env, shape=(64, 64)):
+        self.achievements = {f"Achievements/{k.name.lower()}": [] for k in Achievement}
         self._shape = shape
         super().__init__(env)
 
@@ -169,6 +170,10 @@ class CraftaxWrapper(GymnaxWrapper):
         obs, env_state, reward, done, info = self._env.step(
             rng, env_state, action, params
         )
+        for k in self.achievements.keys():
+            for idx, val in enumerate(info["discount"]):
+                if val == 0:
+                    self.achievements[k].append(int(info[k][idx]))
 
         return env_state, {
             "observation": jax.image.resize(
