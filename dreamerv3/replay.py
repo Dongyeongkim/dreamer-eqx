@@ -234,11 +234,7 @@ def tree_concat(trees):
 
 
 def putarray(data, device):
-    # https://github.com/google/jax/issues/16905; faster device_put
-    aval = ShapedArray(data.shape, data.dtype)
-    return xc.batched_device_put(
-        aval, SingleDeviceSharding(device), [data], [device], True
-    )
+    return jax.device_put(data, device)
 
 
 def optimisedgetchunk(data, chunk_length: int):
