@@ -10,6 +10,7 @@ def main(cfg):
 
     config = ml_collections.ConfigDict(OmegaConf.to_container(cfg, resolve=True))
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.accelerator.gpu_id)
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
     from utils.logger import Logger
@@ -29,7 +30,9 @@ def main(cfg):
     print(f"Building the Environment...")
 
     env = make_craftax_env(**config.env)
-    eval_env = make_craftax_env(env_name=config.env.env_name, autoreset=config.env.autoreset, eval_mode=True)
+    eval_env = make_craftax_env(
+        env_name=config.env.env_name, autoreset=config.env.autoreset, eval_mode=True
+    )
 
     print(f"Done!")
 
@@ -90,9 +93,16 @@ def main(cfg):
     key, training_key = jax.random.split(key)
     state = train_and_evaluate_fn(
         key=training_key,
-        num_steps=int(config.env.num_interaction_steps//config.env.num_envs),
+        num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
         defrag_ratio=config.common.batch_size * config.common.batch_length,
-        replay_ratio=(config.env.replay_ratio//config.env.num_envs),
+        replay_ratio=(
+            (
+                config.common.batch_size
+                * (config.common.batch_length - 1)
+                // config.env.replay_ratio
+            )
+            // config.env.num_envs
+        ),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,
         eval_ratio=config.report.eval_ratio,
