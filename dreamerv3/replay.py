@@ -73,11 +73,9 @@ def chunking(
 ):
     neg_splitpoint = (num_env_size * len(left)) % chunk_size
     splitpoint = len(left) - (neg_splitpoint // num_env_size)
-
-    restored = [tree_unflatten(input_pytreedef, data) for data in left[:splitpoint]]
-    if len(restored) == 0:
+    if splitpoint > len(left):
         return None
-
+    restored = [tree_unflatten(input_pytreedef, data) for data in left[:splitpoint]]
     prechunk = tree_stack(restored)
     prechunk = tree_map(transform2ds, prechunk, deskeydim)
     prechunk = tree_map(
@@ -138,15 +136,18 @@ def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
     else:
         _, sampled = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
         return sampled
-    preds, prechunks = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
-    sampled = vectorize_cond_dict(
-        preds,
-        lambda buffer, prechunk: prechunk,
-        lambda buffer, prechunk: buffer,
-        buffer,
-        prechunks,
-    )
-    return sampled
+    if prechunks is None:
+        return buffer
+    else:
+        preds, prechunks = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
+        sampled = vectorize_cond_dict(
+            preds,
+            lambda buffer, prechunk: prechunk,
+            lambda buffer, prechunk: buffer,
+            buffer,
+            prechunks,
+            )
+        return sampled
 
 
 def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
@@ -159,43 +160,59 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         buffer_state.deskeydim,
         buffer_state.chunk_size_dict,
     )
-    buffer_state.left = buffer_state.left[splitpoint:]
     if prechunks is None:
-        return key, buffer_state
-
-    bufferlen = 0
-    if len(buffer_state.buffer) == 0:
-        idxes = random.randint(
-            partial_key,
-            shape=(defrag_ratio // replay_ratio,),
-            minval=0,
-            maxval=len(list(prechunks.values())[0]),
-        )
-    else:
-        idxes = random.randint(
-            partial_key,
-            shape=(defrag_ratio // replay_ratio,),
-            minval=0,
-            maxval=len(list(buffer_state.buffer.values())[0])
-            + len(list(prechunks.values())[0]),
-        )
+        if len(buffer_state.buffer) == 0:
+            raise IndexError("No Chunks inside of replaybuffer")
+        else:
+            idxes = random.randint(
+                partial_key,
+                shape=(defrag_ratio // replay_ratio,),
+                minval=0,
+                maxval=len(list(buffer_state.buffer.values())[0]))
+            
         bufferlen = len(list(buffer_state.buffer.values())[0])
-
-    idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
-    buffer_state.cache = optimised_sampling(
-        buffer_state.buffer,
-        bufferlen,
-        prechunks,
-        idxes_dict,
-        buffer_state.deskeydim,
-    )
-    prechunks_cpu = tree_map(
-        lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
-    )
-    if bufferlen:
-        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
+        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
+        buffer_state.cache = optimised_sampling(
+            buffer_state.buffer,
+            bufferlen,
+            prechunks,
+            idxes_dict,
+            buffer_state.deskeydim,
+            )
+        return key, buffer_state
     else:
-        buffer_state.buffer = prechunks_cpu
+        buffer_state.left = buffer_state.left[splitpoint:]
+        bufferlen = 0
+        if len(buffer_state.buffer) == 0:
+            idxes = random.randint(
+                partial_key,
+                shape=(defrag_ratio // replay_ratio,),
+                minval=0,
+                maxval=len(list(prechunks.values())[0]),)
+        else:
+            idxes = random.randint(
+                partial_key,
+                shape=(defrag_ratio // replay_ratio,),
+                minval=0,
+                maxval=len(list(buffer_state.buffer.values())[0])
+                + len(list(prechunks.values())[0]),
+                )
+            bufferlen = len(list(buffer_state.buffer.values())[0])
+        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
+        buffer_state.cache = optimised_sampling(
+            buffer_state.buffer,
+            bufferlen,
+            prechunks,
+            idxes_dict,
+            buffer_state.deskeydim,
+            )
+        prechunks_cpu = tree_map(
+            lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
+            )
+        if bufferlen:
+            buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
+        else:
+            buffer_state.buffer = prechunks_cpu
 
     return key, buffer_state
 
