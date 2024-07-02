@@ -74,7 +74,7 @@ def chunking(
     neg_splitpoint = (num_env_size * len(left)) % chunk_size
     splitpoint = len(left) - (neg_splitpoint // num_env_size)
     if splitpoint <= 0:
-        return None
+        return None, None
     restored = [tree_unflatten(input_pytreedef, data) for data in left[:splitpoint]]
     prechunk = tree_stack(restored)
     prechunk = tree_map(transform2ds, prechunk, deskeydim)
