@@ -67,7 +67,6 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
     return buffer_state
 
 
-@eqx.filter_jit
 def chunking(
     left, num_env_size, chunk_size, input_pytreedef, deskeydim, chunk_size_dict
 ):
