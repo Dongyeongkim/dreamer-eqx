@@ -170,10 +170,10 @@ class CraftaxWrapper(GymnaxWrapper):
         obs, env_state, reward, done, info = self._env.step(
             rng, env_state, action, params
         )
-        for k in self.achievements.keys():
-            for idx, val in enumerate(info["discount"]):
+        for idx, val in enumerate(info["discount"]):
                 if val == 0:
-                    self.achievements[k].append(int(info[k][idx]))
+                    for k in self.achievements.keys():                    
+                        self.achievements[k].append(int(info[k][idx]))
 
         return env_state, {
             "observation": jax.image.resize(
