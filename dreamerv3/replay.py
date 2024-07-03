@@ -66,7 +66,7 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
     buffer_state.left.append(vals)
     return buffer_state
 
-
+@eqx.filter_jit
 def chunking(
     left, num_env_size, chunk_size, input_pytreedef, deskeydim, batch_size, batch_length
 ):
@@ -89,7 +89,7 @@ def chunking(
     ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
     return splitpoint, prechunk
 
-
+@eqx.filter_jit
 def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
     def apply_cond(p, *x):
         return jax.lax.cond(p, true_fun, false_fun, *x)
@@ -221,7 +221,7 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
 
     return key, buffer_state
 
-
+@eqx.filter_jit
 def sampler(
     idx,
     cache,
