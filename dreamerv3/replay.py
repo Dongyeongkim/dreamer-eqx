@@ -68,7 +68,7 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
 
 
 def chunking(
-    left, num_env_size, chunk_size, input_pytreedef, deskeydim, chunk_size_dict
+    left, num_env_size, chunk_size, input_pytreedef, deskeydim, batch_size, batch_length
 ):
     neg_splitpoint = (num_env_size * len(left)) % chunk_size
     splitpoint = len(left) - (neg_splitpoint // num_env_size)
@@ -78,12 +78,15 @@ def chunking(
     prechunk = tree_stack(restored)
     prechunk = tree_map(transform2ds, prechunk, deskeydim)
     prechunk = tree_map(
-        lambda val, chunk_size: einops.rearrange(
-            val, "(t b) ... -> b t ...", t=chunk_size
-        ),
+        lambda val: einops.rearrange(val, "(t b) ... -> b t ...", b=num_env_size),
         prechunk,
-        chunk_size_dict,
     )
+    prechunk["deter"] = prechunk["deter"][
+        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
+    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
+    prechunk["stoch"] = prechunk["stoch"][
+        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
+    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
     return splitpoint, prechunk
 
 
@@ -145,7 +148,7 @@ def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
             lambda buffer, prechunk: buffer,
             buffer,
             prechunks,
-            )
+        )
         return sampled
 
 
@@ -157,7 +160,8 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
         buffer_state.chunk_size,
         buffer_state.input_pytreedef,
         buffer_state.deskeydim,
-        buffer_state.chunk_size_dict,
+        buffer_state.batch_size,
+        buffer_state.batch_length,
     )
     if prechunks is None:
         if len(buffer_state.buffer) == 0:
@@ -167,8 +171,9 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
                 partial_key,
                 shape=(defrag_ratio // replay_ratio,),
                 minval=0,
-                maxval=len(list(buffer_state.buffer.values())[0]))
-            
+                maxval=len(list(buffer_state.buffer.values())[0]),
+            )
+
         bufferlen = len(list(buffer_state.buffer.values())[0])
         idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
         buffer_state.cache = optimised_sampling(
@@ -177,7 +182,7 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
             prechunks,
             idxes_dict,
             buffer_state.deskeydim,
-            )
+        )
         return key, buffer_state
     else:
         buffer_state.left = buffer_state.left[splitpoint:]
@@ -187,7 +192,8 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
                 partial_key,
                 shape=(defrag_ratio // replay_ratio,),
                 minval=0,
-                maxval=len(list(prechunks.values())[0]),)
+                maxval=len(list(prechunks.values())[0]),
+            )
         else:
             idxes = random.randint(
                 partial_key,
@@ -195,7 +201,7 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
                 minval=0,
                 maxval=len(list(buffer_state.buffer.values())[0])
                 + len(list(prechunks.values())[0]),
-                )
+            )
             bufferlen = len(list(buffer_state.buffer.values())[0])
         idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
         buffer_state.cache = optimised_sampling(
@@ -204,10 +210,10 @@ def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
             prechunks,
             idxes_dict,
             buffer_state.deskeydim,
-            )
+        )
         prechunks_cpu = tree_map(
             lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
-            )
+        )
         if bufferlen:
             buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
         else:
@@ -274,5 +280,4 @@ def transform2batch(
         data,
         "(b t) ... -> b t ...",
         b=batch_size,
-        t=batch_length,
     )
