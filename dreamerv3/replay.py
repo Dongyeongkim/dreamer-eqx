@@ -109,7 +109,7 @@ def get_from_buffer(idxes, buffer):
     )
     return buffer
 
-
+@eqx.filter_jit
 def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
     preds = tree_map(
         lambda idx, blen: jnp.greater_equal(idx, blen),
