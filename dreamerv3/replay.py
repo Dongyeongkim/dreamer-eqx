@@ -4,18 +4,15 @@ import einops
 import equinox as eqx
 from jax import random
 import jax.numpy as jnp
-from jax.core import ShapedArray
-from jax._src.lib import xla_client as xc
-from jax.sharding import SingleDeviceSharding
 from jax.tree_util import tree_map, tree_structure, tree_leaves, tree_unflatten
 
 from typing import Dict
+from functools import partial
 
 
 @chex.dataclass
 class ReplayBuffer:
     left: list
-    cache: dict
     buffer: dict
     chunk_id: int
     deskeydim: dict
@@ -29,18 +26,15 @@ class ReplayBuffer:
     batch_size_dict: dict
     batch_length_dict: dict
 
-
 def generate_replaybuffer(
     buffer_size, desired_key_dim, batch_size, batch_length, num_env=1
 ):
     assert (
         num_env > 0
     ), "number of the environments should be greater or equal than 1(replay buffer)"
-
     desired_key_and_dim = {k: len((num_env,) + v) for k, v in desired_key_dim.items()}
     return ReplayBuffer(
         left=[],
-        cache={},
         buffer={},
         chunk_id=0,
         deskeydim=desired_key_and_dim,
@@ -66,181 +60,55 @@ def pushstep(buffer_state, data: Dict[str, jnp.array]):
     buffer_state.left.append(vals)
     return buffer_state
 
-@eqx.filter_jit
-def chunking(
-    left, num_env_size, chunk_size, input_pytreedef, deskeydim, batch_size, batch_length
-):
-    neg_splitpoint = (num_env_size * len(left)) % chunk_size
-    splitpoint = len(left) - (neg_splitpoint // num_env_size)
-    if splitpoint <= 0:
-        return None, None
-    restored = [tree_unflatten(input_pytreedef, data) for data in left[:splitpoint]]
+
+def defragmenter(buffer_state):
+    neg_splitpoint = (
+        buffer_state.num_env_size * len(buffer_state.left)
+    ) % buffer_state.chunk_size
+    splitpoint = len(buffer_state.left) - (neg_splitpoint // buffer_state.num_env_size)
+
+    restored = [
+        tree_unflatten(buffer_state.input_pytreedef, data)
+        for data in buffer_state.left[:splitpoint]
+    ]
+    if len(restored) == 0:
+        return buffer_state
+
+    buffer_state.left = buffer_state.left[splitpoint:]
+
     prechunk = tree_stack(restored)
-    prechunk = tree_map(transform2ds, prechunk, deskeydim)
+    prechunk = tree_map(transform2ds, prechunk, buffer_state.deskeydim)
     prechunk = tree_map(
-        lambda val: einops.rearrange(val, "(t b) ... -> b t ...", b=num_env_size),
-        prechunk,
-    )
-    prechunk["deter"] = prechunk["deter"][
-        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
-    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
-    prechunk["stoch"] = prechunk["stoch"][
-        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
-    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
-    return splitpoint, prechunk
-
-@eqx.filter_jit
-def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
-    def apply_cond(p, *x):
-        return jax.lax.cond(p, true_fun, false_fun, *x)
-
-    return jax.tree_util.tree_map(
-        lambda pred, *x: jax.vmap(apply_cond)(pred, *x), pred, *operand_dicts
-    )
-
-
-def get_from_buffer(idxes, buffer):
-    buffer = tree_map(
-        lambda idxes, val: putarray(
-            jnp.take(val, idxes, axis=0), device=jax.devices()[0]
+        lambda val, chunk_size: einops.rearrange(
+            val, "(t c) ... -> t c ...", c=chunk_size
         ),
-        idxes,
-        buffer,
+        prechunk,
+        buffer_state.chunk_size_dict,
     )
-    return buffer
+    if len(buffer_state.buffer.keys()) == 0:
+        buffer_state.buffer = prechunk
+        return buffer_state
 
-@eqx.filter_jit
-def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
-    preds = tree_map(
-        lambda idx, blen: jnp.greater_equal(idx, blen),
-        idxes,
-        {k: bufferlen for k in deskeydim.keys()},
-    )
-    mod_idxes = tree_map(
-        lambda idx, blen, prechunk: jnp.int32(jnp.greater_equal(idx, blen))
-        * (idx - blen)
-        + jnp.int32(jnp.less(idx, blen)) * (prechunk.shape[0]),
-        idxes,
-        {k: bufferlen for k in deskeydim.keys()},
-        prechunks,
-    )
-    prechunks = tree_map(
-        lambda idxes, val: jnp.take(val, idxes, axis=0),
-        mod_idxes,
-        prechunks,
-    )
-    return preds, prechunks
-
-
-def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
-    if bufferlen:
-        buffer = get_from_buffer(idxes, buffer)
     else:
-        _, sampled = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
-        return sampled
-    if prechunks is None:
-        return buffer
-    else:
-        preds, prechunks = get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim)
-        sampled = vectorize_cond_dict(
-            preds,
-            lambda buffer, prechunk: prechunk,
-            lambda buffer, prechunk: buffer,
-            buffer,
-            prechunks,
-        )
-        return sampled
+        buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
+
+    return buffer_state
 
 
-def defragmenter(key, buffer_state, defrag_ratio, replay_ratio):
-    key, partial_key = random.split(key, num=2)
-    splitpoint, prechunks = chunking(
-        buffer_state.left,
-        buffer_state.num_env_size,
-        buffer_state.chunk_size,
-        buffer_state.input_pytreedef,
-        buffer_state.deskeydim,
-        buffer_state.batch_size,
-        buffer_state.batch_length,
+def sampler(key, buffer_state, device=None):
+    idx = random.randint(
+        key, shape=(), minval=0, maxval=len(list(buffer_state.buffer.values())[0])
     )
-    if prechunks is None:
-        if len(buffer_state.buffer) == 0:
-            raise IndexError("No Chunks inside of replaybuffer")
-        else:
-            idxes = random.randint(
-                partial_key,
-                shape=(defrag_ratio // replay_ratio,),
-                minval=0,
-                maxval=len(list(buffer_state.buffer.values())[0]),
-            )
-
-        bufferlen = len(list(buffer_state.buffer.values())[0])
-        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
-        buffer_state.cache = optimised_sampling(
-            buffer_state.buffer,
-            bufferlen,
-            prechunks,
-            idxes_dict,
-            buffer_state.deskeydim,
-        )
-        return key, buffer_state
-    else:
-        buffer_state.left = buffer_state.left[splitpoint:]
-        bufferlen = 0
-        if len(buffer_state.buffer) == 0:
-            idxes = random.randint(
-                partial_key,
-                shape=(defrag_ratio // replay_ratio,),
-                minval=0,
-                maxval=len(list(prechunks.values())[0]),
-            )
-        else:
-            idxes = random.randint(
-                partial_key,
-                shape=(defrag_ratio // replay_ratio,),
-                minval=0,
-                maxval=len(list(buffer_state.buffer.values())[0])
-                + len(list(prechunks.values())[0]),
-            )
-            bufferlen = len(list(buffer_state.buffer.values())[0])
-        idxes_dict = {k: idxes for k in buffer_state.deskeydim.keys()}
-        buffer_state.cache = optimised_sampling(
-            buffer_state.buffer,
-            bufferlen,
-            prechunks,
-            idxes_dict,
-            buffer_state.deskeydim,
-        )
-        prechunks_cpu = tree_map(
-            lambda val: putarray(val, jax.devices("cpu")[0]), prechunks
-        )
-        if bufferlen:
-            buffer_state.buffer = tree_concat([buffer_state.buffer, prechunks_cpu])
-        else:
-            buffer_state.buffer = prechunks_cpu
-
-    return key, buffer_state
-
-@eqx.filter_jit
-def sampler(
-    idx,
-    cache,
-    deskeydim,
-    batch_size_dict,
-    batch_length_dict,
-    defrag_ratio,
-    replay_ratio,
-):
-    idx %= defrag_ratio // replay_ratio
-    idxes = {k: idx for k in deskeydim.keys()}
-    sampled = tree_map(lambda idx, val: val[idx].squeeze(), idxes, cache)
+    idxes = {k: idx for k in buffer_state.deskeydim.keys()}
+    sampled = tree_map(lambda idx, val: val[idx].squeeze(), idxes, buffer_state.buffer)
     batched = tree_map(
         transform2batch,
         sampled,
-        deskeydim,
-        batch_size_dict,
-        batch_length_dict,
+        buffer_state.deskeydim,
+        buffer_state.batch_size_dict,
+        buffer_state.batch_length_dict,
     )
+    batched = putarray(batched, jax.devices()[0] if device is None else device)
     return batched
 
 
@@ -278,6 +146,8 @@ def transform2batch(
     assert len(data.shape) == expected_dim, "dimension does not fit with expected dim"
     return einops.rearrange(
         data,
-        "(b t) ... -> b t ...",
+        "(t b) ... -> b t ...",
         b=batch_size,
+        t=batch_length,
     )
+

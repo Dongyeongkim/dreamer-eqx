@@ -134,7 +134,7 @@ class WorldModel(eqx.Module):
             }
 
         carry, traj = jax.lax.scan(
-            f=lambda *a, **kw: step(*a, **kw), init=startlat, xs=jnp.arange(horizon)
+            f=lambda *a, **kw: step(*a, **kw), init=startlat, xs=jnp.arange(horizon), unroll=False
         )
         _, _ = startlat.pop("key"), traj.pop("key")
         _, _ = startlat.pop("policy_key"), traj.pop("policy_key")

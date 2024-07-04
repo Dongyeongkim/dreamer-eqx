@@ -1,7 +1,8 @@
+import jax
 import tqdm
 from jax import random
 import jax.numpy as jnp
-from dreamerv3.replay import defragmenter, pushstep, sampler
+from dreamerv3.replay import defragmenter, pushstep, sampler, putarray
 
 # rollout_fn
 #   - interaction_fn: interacting with jax environment
@@ -41,9 +42,7 @@ def train_and_evaluate_fn(
 
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
-            state["key"], state["rb_state"] = defragmenter(
-                state["key"], state["rb_state"], defrag_ratio, replay_ratio
-            )
+            state["rb_state"] = defragmenter(state["rb_state"])
 
         if idx % replay_ratio == 0:
             state, lossval, loss_and_info = train_agent_fn(
@@ -131,10 +130,10 @@ def interaction_fn(
     timestep["stoch"] = jnp.argmax(agent_state[0][0]["stoch"], -1).astype(jnp.int32)
     timestep["action"] = agent_state[0][1]
     agent_state, outs = agent_fn.policy(
-        agent_modules, policy_key, agent_state, timestep
+        agent_modules, policy_key, agent_state, putarray(timestep, jax.devices()[0])
     )
 
-    rb_state = pushstep(rb_state, timestep)
+    rb_state = pushstep(rb_state, putarray(timestep, jax.devices("cpu")[0]))
     return {
         "key": key,
         "agent_modules": agent_modules,
@@ -146,15 +145,9 @@ def interaction_fn(
 
 
 def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
-    key, report_key = random.split(key, num=2)
+    key, sampling_key, report_key = random.split(key, num=3)
     sampled_data = sampler(
-        idx,
-        rb_state.cache,
-        rb_state.deskeydim,
-        rb_state.batch_size_dict,
-        rb_state.batch_length_dict,
-        defrag_ratio,
-        replay_ratio,
+        sampling_key, rb_state,
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -175,15 +168,9 @@ def train_agent_fn(
     rb_state,
     idx,
 ):
-    key, training_key = random.split(key, num=2)
+    key, sampling_key, training_key = random.split(key, num=3)
     sampled_data = sampler(
-        idx,
-        rb_state.cache,
-        rb_state.deskeydim,
-        rb_state.batch_size_dict,
-        rb_state.batch_length_dict,
-        defrag_ratio,
-        replay_ratio,
+        sampling_key, rb_state,
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
