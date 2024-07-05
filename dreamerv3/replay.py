@@ -83,12 +83,61 @@ def defragmenter(buffer_state):
             val, "(t c) ... -> t c ...", c=chunk_size
         ),
         prechunk,
-        buffer_state.chunk_size_dict,
     )
-    if len(buffer_state.buffer.keys()) == 0:
-        buffer_state.buffer = prechunk
-        return buffer_state
+    prechunk["deter"] = prechunk["deter"][
+        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
+    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
+    prechunk["stoch"] = prechunk["stoch"][
+        :, jnp.arange(start=0, stop=batch_size * batch_length, step=batch_length), ...
+    ]  # optimising the storage and performance of latent conditioning; only requires 1 step per batch_length
+    return splitpoint, prechunk
 
+@eqx.filter_jit
+def vectorize_cond_dict(pred, true_fun, false_fun, *operand_dicts):
+    def apply_cond(p, *x):
+        return jax.lax.cond(p, true_fun, false_fun, *x)
+
+    return jax.tree_util.tree_map(
+        lambda pred, *x: jax.vmap(apply_cond)(pred, *x), pred, *operand_dicts
+    )
+
+
+def get_from_buffer(idxes, buffer):
+    buffer = tree_map(
+        lambda idxes, val: putarray(
+            jnp.take(val, idxes, axis=0), device=jax.devices()[0]
+        ),
+        idxes,
+        buffer,
+    )
+    return buffer
+
+
+def get_from_cachedbuffer(prechunks, idxes, bufferlen, deskeydim):
+    preds = tree_map(
+        lambda idx, blen: jnp.greater_equal(idx, blen),
+        idxes,
+        {k: bufferlen for k in deskeydim.keys()},
+    )
+    mod_idxes = tree_map(
+        lambda idx, blen, prechunk: jnp.int32(jnp.greater_equal(idx, blen))
+        * (idx - blen)
+        + jnp.int32(jnp.less(idx, blen)) * (prechunk.shape[0]),
+        idxes,
+        {k: bufferlen for k in deskeydim.keys()},
+        prechunks,
+    )
+    prechunks = tree_map(
+        lambda idxes, val: jnp.take(val, idxes, axis=0),
+        mod_idxes,
+        prechunks,
+    )
+    return preds, prechunks
+
+
+def optimised_sampling(buffer, bufferlen, prechunks, idxes, deskeydim):
+    if bufferlen:
+        buffer = get_from_buffer(idxes, buffer)
     else:
         buffer_state.buffer = tree_concat([buffer_state.buffer, prechunk])
 
