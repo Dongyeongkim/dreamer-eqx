@@ -68,14 +68,20 @@ def generate_replaybuffer(
 
 def calcidxes(chunk_id, buffer_size, num_env):
     if chunk_id + num_env >= buffer_size:
-        return jnp.concatenate(
+        is_full = True
+        next_chunk_ptr = chunk_id + num_env - buffer_size
+        idxes = jnp.concatenate(
             (
                 jnp.arange(start=chunk_id, stop=buffer_size),
                 jnp.arange(start=0, stop=chunk_id + num_env - buffer_size),
             )
         )
     else:
-        return jnp.arange(start=chunk_id, stop=(chunk_id + num_env))
+        is_full = False
+        next_chunk_ptr = chunk_id + num_env
+        idxes = jnp.arange(start=chunk_id, stop=chunk_id + num_env)
+
+    return is_full, next_chunk_ptr, idxes
 
 
 def sampler(key, bufferlen, buffer, batch_size):
