@@ -16,6 +16,7 @@ class ReplayBuffer:
     num_chunks: int
     fragment_ptr: int
     num_fragment: int
+    num_env: int
 
 
 def generate_replaybuffer(
@@ -65,6 +66,9 @@ def generate_replaybuffer(
         is_full=False,
         chunk_ptr=0,
         num_chunks=n_chunks,
+        fragment_ptr=0,
+        num_fragment=batch_size * batch_length,
+        num_env=num_env,
     )
 
 

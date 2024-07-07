@@ -48,8 +48,15 @@ def train_and_evaluate_fn(
 
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
-            pass
-            # state["rb_state"] = put2buffer()
+            is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
+                state["rb_state"].chunk_ptr,
+                state["rb_state"].num_chunks,
+                state["rb_state"].num_env,
+            )
+            state["rb_state"].buffer = put2buffer(
+                idxes, state["rb_state"].buffer, state["rb_state"].fragment
+            )
+            state["rb_state"].is_full = state["rb_state"].is_full or is_full
 
         if idx % replay_ratio == 0:
             state, lossval, loss_and_info = train_agent_fn(
@@ -139,14 +146,12 @@ def interaction_fn(
     agent_state, outs = agent_fn.policy(
         agent_modules, policy_key, agent_state, timestep
     )
-
-    rb_state["fragment"] = put2fragmentcache(
-        rb_state["fragment_ptr"], rb_state["fragment"], timestep
+    rb_state.fragment = put2fragmentcache(
+        rb_state.fragment_ptr, rb_state.fragment, timestep
     )
-    rb_state["fragment_ptr"] = calcfragmentidxes(
-        rb_state["fragment_ptr"], rb_state["fragment_size"]
+    rb_state.fragment_ptr = calcfragmentidxes(
+        rb_state.fragment_ptr, rb_state.num_fragment
     )
-
     return {
         "key": key,
         "agent_modules": agent_modules,
