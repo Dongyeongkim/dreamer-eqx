@@ -135,7 +135,7 @@ class Optimizer(eqx.Module):
             modules,
             opt_state,
             total_loss,
-            (norms_and_loss_and_info[1], norms_and_loss_and_info[2]),
+            (norms_and_loss_and_info[1], norms_and_loss_and_info[2], norms_and_loss_and_info[3]),
         )
 
 

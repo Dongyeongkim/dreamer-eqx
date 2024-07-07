@@ -188,8 +188,11 @@ class DreamerV3:
         metrics.update(
             {f"train/{k}_loss_std": v.std() for k, v in scaled_losses.items()}
         )
+        newlat = wm_carry
+        newact = data["action"][:, -1]
+        newcarry = (newlat, newact)
 
-        return loss, (modules["norms"], scaled_losses, metrics)
+        return loss, (modules["norms"], newcarry, wm_outs, metrics)
 
     @eqx.filter_jit
     def jax_report(self, modules, key, data):

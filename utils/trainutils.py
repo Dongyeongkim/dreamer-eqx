@@ -206,6 +206,9 @@ def train_agent_fn(
         opt_fn,
         opt_state,
     )
+    agent_state[0] = loss_and_info[0] # newlat and newact, dreamer.py L95, L191-L193, dreamerutils.py L134-L140 
+    replay_outs = loss_and_info[1] # replay_outs
+    rb_state.buffer = put2buffer(idx, rb_state.buffer, replay_outs)
     return (
         {
             "key": key,
