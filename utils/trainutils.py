@@ -164,9 +164,12 @@ def interaction_fn(
 
 def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
     key, sampling_key, report_key = random.split(key, num=3)
-    sampled_data = sampler(
+    bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr + 1
+    idx, sampled_data = sampler(
         sampling_key,
-        rb_state,
+        bufferlen,
+        rb_state.buffer,
+        rb_state.batch_size
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -188,9 +191,12 @@ def train_agent_fn(
     idx,
 ):
     key, sampling_key, training_key = random.split(key, num=3)
-    sampled_data = sampler(
+    bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr + 1
+    idx, sampled_data = sampler(
         sampling_key,
-        rb_state,
+        bufferlen,
+        rb_state.buffer,
+        rb_state.batch_size
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
