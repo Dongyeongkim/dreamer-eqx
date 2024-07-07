@@ -56,21 +56,20 @@ def main(cfg):
 
     rb_state = generate_replaybuffer(
         buffer_size=config.common.rb_size,
-        desired_key_dim={
-            "deter": (config.wm.deter,),
-            "stoch": (config.wm.latent_dim,),
-            "observation": env.observation_space(env_params).shape,
-            "reward": (),
-            "is_first": (),
-            "is_last": (),
-            "is_terminal": (),
-            "action": (env.action_space(env_params).n,),
+        desired_key_dtype_dim={
+            "deter": ("bfloat16", (config.wm.deter,)),
+            "stoch": ("int32", (config.wm.latent_dim,)),
+            "observation": ("float32", (64, 64, 3)),
+            "reward": ("float32", ()),
+            "is_first": ("bool", ()),
+            "is_last": ("bool", ()),
+            "is_terminal": ("bool", ()),
+            "action": ("float32", (env.action_space(env_params).n,)),
         },
         batch_size=config.common.batch_size,
         batch_length=config.common.batch_length,
         num_env=config.env.num_envs,
     )
-
     print("ReplayBuffer has set up")
 
     print("Prefilling steps...")
@@ -94,7 +93,7 @@ def main(cfg):
     state = train_and_evaluate_fn(
         key=training_key,
         num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
-        defrag_ratio=260,
+        defrag_ratio=config.common.batch_size * config.common.batch_length,
         replay_ratio=(
             (
                 config.common.batch_size

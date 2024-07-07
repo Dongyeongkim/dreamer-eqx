@@ -1,8 +1,5 @@
-import jax
 import numpy as np
-from jax import random
 import jax.numpy as jnp
-from dreamerv3.replay import tree_stack
 
 
 def craftax_eval_fn(agent_fn, env_fn, key, agent_modules, env_params):
