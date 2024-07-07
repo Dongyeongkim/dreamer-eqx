@@ -191,6 +191,7 @@ class DreamerV3:
         newlat = wm_carry
         newact = data["action"][:, -1]
         newcarry = (newlat, newact)
+        wm_outs["stoch"] = jnp.argmax(wm_outs["stoch"], -1).astype(jnp.int32) # dreamer.py L106
 
         return loss, (modules["norms"], newcarry, wm_outs, metrics)
 
