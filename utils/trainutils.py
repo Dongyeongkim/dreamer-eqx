@@ -169,7 +169,10 @@ def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state
     key, sampling_key, report_key = random.split(key, num=3)
     bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
     idx, sampled_data = sampler(
-        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size
+        sampling_key,
+        bufferlen,
+        rb_state.buffer,
+        rb_state.batch_size
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -197,7 +200,7 @@ def train_agent_fn(
         bufferlen,
         rb_state.buffer,
         rb_state.batch_size,
-        rb_state.chunk_ptr - 1 if is_online else None,
+        rb_state.chunk_ptr - 1 if is_online else None
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
@@ -207,11 +210,6 @@ def train_agent_fn(
         opt_fn,
         opt_state,
     )
-    agent_state = (
-        (loss_and_info[0][0], agent_state[0][1]),
-        agent_state[1],
-        agent_state[2],
-    )  # newlat and newact, dreamer.py L95, L191-L193, dreamerutils.py L134-L140
     # replay_outs = loss_and_info[1] # replay_outs
     # rb_state.buffer = put2buffer(idx, rb_state.buffer, replay_outs) - temporal removal; investigation is required
     return (
