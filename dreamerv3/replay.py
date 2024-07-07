@@ -103,8 +103,8 @@ def calcfragmentidxes(fragment_id, fragment_size):
         return fragment_id + 1
 
 
-def sampler(key, bufferlen, buffer, batch_size):
-    idx = jax.random.randint(key, shape=(1,), minval=0, maxval=bufferlen)
+def sampler(key, bufferlen, buffer, batch_size, idx=None):
+    idx = jax.random.randint(key, shape=(1,), minval=0, maxval=bufferlen) if idx is None else idx
     raw_sampled = tree_map(lambda val: jnp.take(val, idx, axis=0).squeeze(), buffer)
     sampled = tree_map(
         lambda val: einops.rearrange(val, "(b t) ... -> b t ...", b=batch_size),

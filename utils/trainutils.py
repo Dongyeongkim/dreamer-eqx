@@ -45,9 +45,11 @@ def train_and_evaluate_fn(
         "env_state": env_state,
         "rb_state": rb_state,
     }
+    is_online = False
 
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
+            is_online = True
             is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
                 state["rb_state"].chunk_ptr,
                 state["rb_state"].num_chunks,
@@ -66,9 +68,10 @@ def train_and_evaluate_fn(
                 defrag_ratio,
                 replay_ratio,
                 env_params=env_params,
-                idx=idx,
+                is_online=is_online,
                 **state
             )
+            is_online = False
             if debug_mode:
                 logger._write(loss_and_info[1], env_fn.num_envs * idx)
 
@@ -188,7 +191,7 @@ def train_agent_fn(
     env_state,
     opt_state,
     rb_state,
-    idx,
+    is_online,
 ):
     key, sampling_key, training_key = random.split(key, num=3)
     bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
@@ -196,7 +199,8 @@ def train_agent_fn(
         sampling_key,
         bufferlen,
         rb_state.buffer,
-        rb_state.batch_size
+        rb_state.batch_size,
+        rb_state.chunk_ptr - 1 if is_online else None
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
@@ -207,8 +211,8 @@ def train_agent_fn(
         opt_state,
     )
     agent_state = (loss_and_info[0], agent_state[1], agent_state[2]) # newlat and newact, dreamer.py L95, L191-L193, dreamerutils.py L134-L140
-    replay_outs = loss_and_info[1] # replay_outs
-    rb_state.buffer = put2buffer(idx, rb_state.buffer, replay_outs)
+    # replay_outs = loss_and_info[1] # replay_outs
+    # rb_state.buffer = put2buffer(idx, rb_state.buffer, replay_outs) - temporal removal; investigation is required
     return (
         {
             "key": key,
