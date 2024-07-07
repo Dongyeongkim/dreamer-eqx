@@ -14,6 +14,8 @@ class ReplayBuffer:
     is_full: bool
     chunk_ptr: int
     num_chunks: int
+    fragment_ptr: int
+    num_fragment: int
 
 
 def generate_replaybuffer(
@@ -66,7 +68,7 @@ def generate_replaybuffer(
     )
 
 
-def calcidxes(chunk_id, buffer_size, num_env):
+def calcbufferidxes(chunk_id, buffer_size, num_env):
     if chunk_id + num_env >= buffer_size:
         is_full = True
         next_chunk_ptr = chunk_id + num_env - buffer_size
@@ -76,12 +78,23 @@ def calcidxes(chunk_id, buffer_size, num_env):
                 jnp.arange(start=0, stop=chunk_id + num_env - buffer_size),
             )
         )
+        
+        return is_full, next_chunk_ptr, idxes
+    
     else:
         is_full = False
         next_chunk_ptr = chunk_id + num_env
         idxes = jnp.arange(start=chunk_id, stop=chunk_id + num_env)
 
-    return is_full, next_chunk_ptr, idxes
+        return is_full, next_chunk_ptr, idxes
+
+
+def calcfragmentidxes(fragment_id, fragment_size):
+    assert fragment_id > -1, "the ptr must be in positive integer space"
+    if fragment_id == fragment_size:
+        return 0
+    else:
+        return fragment_id + 1
 
 
 def sampler(key, bufferlen, buffer, batch_size):

@@ -2,7 +2,13 @@ import jax
 import tqdm
 from jax import random
 import jax.numpy as jnp
-from dreamerv3.replay import defragmenter, pushstep, sampler, putarray
+from dreamerv3.replay import (
+    put2buffer,
+    put2fragmentcache,
+    sampler,
+    calcbufferidxes,
+    calcfragmentidxes,
+)
 
 # rollout_fn
 #   - interaction_fn: interacting with jax environment
@@ -42,7 +48,8 @@ def train_and_evaluate_fn(
 
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
-            state["rb_state"] = defragmenter(state["rb_state"])
+            pass
+            # state["rb_state"] = put2buffer()
 
         if idx % replay_ratio == 0:
             state, lossval, loss_and_info = train_agent_fn(
@@ -130,10 +137,16 @@ def interaction_fn(
     timestep["stoch"] = jnp.argmax(agent_state[0][0]["stoch"], -1).astype(jnp.int32)
     timestep["action"] = agent_state[0][1]
     agent_state, outs = agent_fn.policy(
-        agent_modules, policy_key, agent_state, putarray(timestep, jax.devices()[0])
+        agent_modules, policy_key, agent_state, timestep
     )
 
-    rb_state = pushstep(rb_state, putarray(timestep, jax.devices("cpu")[0]))
+    rb_state["fragment"] = put2fragmentcache(
+        rb_state["fragment_ptr"], rb_state["fragment"], timestep
+    )
+    rb_state["fragment_ptr"] = calcfragmentidxes(
+        rb_state["fragment_ptr"], rb_state["fragment_size"]
+    )
+
     return {
         "key": key,
         "agent_modules": agent_modules,
@@ -147,7 +160,8 @@ def interaction_fn(
 def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
     key, sampling_key, report_key = random.split(key, num=3)
     sampled_data = sampler(
-        sampling_key, rb_state,
+        sampling_key,
+        rb_state,
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -170,7 +184,8 @@ def train_agent_fn(
 ):
     key, sampling_key, training_key = random.split(key, num=3)
     sampled_data = sampler(
-        sampling_key, rb_state,
+        sampling_key,
+        rb_state,
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
