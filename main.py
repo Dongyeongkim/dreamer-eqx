@@ -121,4 +121,7 @@ def main(cfg):
 
 
 if __name__ == "__main__":
+    import wandb
+    wandb.init(project="dreamer-eqx", sync_tensorboard=True)
     main()
+    wandb.finish()

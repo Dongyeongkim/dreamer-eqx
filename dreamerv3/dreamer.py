@@ -191,9 +191,10 @@ class DreamerV3:
         newlat = wm_carry
         newact = data["action"][:, -1]
         newcarry = (newlat, newact)
-        wm_outs["stoch"] = jnp.argmax(wm_outs["stoch"], -1).astype(jnp.int32) # dreamer.py L106
-
-        return loss, (modules["norms"], newcarry, wm_outs, metrics)
+        _, _ = data_with_wm_outs.pop("post"), data_with_wm_outs.pop("prior")
+        data_with_wm_outs["stoch"] = jnp.argmax(data_with_wm_outs["stoch"], -1).astype(jnp.int32) # dreamer.py L106
+        jax.debug.breakpoint()
+        return loss, (modules["norms"], newcarry, data_with_wm_outs, metrics)
 
     @eqx.filter_jit
     def jax_report(self, modules, key, data):

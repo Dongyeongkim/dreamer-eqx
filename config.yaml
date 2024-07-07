@@ -118,7 +118,7 @@ agent:
   slow_critic_fraction: 0.02
   slow_critic_update: 1
 common:
-  rb_size: 1e6
+  rb_size: 3e6
   batch_size: 16
   batch_length: 65
   loss_scales: 
@@ -150,7 +150,7 @@ env:
   autoreset: true
   num_envs: 1
   replay_ratio: 64
-  num_interaction_steps: 10e6
+  num_interaction_steps: 3e6
 
 seed: 0
 
