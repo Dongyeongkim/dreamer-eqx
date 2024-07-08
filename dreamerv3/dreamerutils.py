@@ -334,7 +334,7 @@ def eqx_adaptive_grad_clip(clipping: float, eps: float = 1e-3):
 
         params = eqx.filter(params, eqx.is_array)  # parameter filtering for eqx module
         updates = jax.tree_util.tree_map(
-            lambda param, update: fn(param, update) if update is not None else None,
+            lambda param, update: fn(param, update) if param is not None else None,
             params,
             updates,
             is_leaf=lambda x:x is None
