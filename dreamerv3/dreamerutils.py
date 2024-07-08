@@ -10,7 +10,6 @@ from optax._src import base
 import orbax.checkpoint as ocp
 from jax.tree_util import tree_map
 from tensorflow_probability.substrates import jax as tfp
-from optax._src.clipping import unitwise_norm, unitwise_clip
 from optree.typing import PyTree
 
 tfd = tfp.distributions
@@ -135,7 +134,11 @@ class Optimizer(eqx.Module):
             modules,
             opt_state,
             total_loss,
-            (norms_and_loss_and_info[1], norms_and_loss_and_info[2], norms_and_loss_and_info[3]),
+            (
+                norms_and_loss_and_info[1],
+                norms_and_loss_and_info[2],
+                norms_and_loss_and_info[3],
+            ),
         )
 
 
@@ -322,14 +325,20 @@ def eqx_adaptive_grad_clip(clipping: float, eps: float = 1e-3):
     def update_fn(updates, state, params):
         if params is None:
             raise ValueError(base.NO_PARAMS_MSG)
+
+        def fn(param, update):
+            unorm = jnp.linalg.norm(update.flatten(), 2)
+            pnorm = jnp.linalg.norm(param.flatten(), 2)
+            upper = clipping * jnp.maximum(eps, pnorm)
+            return update * (1 / jnp.maximum(1.0, unorm / upper))
+
         params = eqx.filter(params, eqx.is_array)  # parameter filtering for eqx module
-        g_norm, p_norm = jax.tree_util.tree_map(unitwise_norm, (updates, params))
-        # Maximum allowable norm.
-        max_norm = jax.tree_util.tree_map(
-            lambda x: clipping * jnp.maximum(x, eps), p_norm
+        updates = jax.tree_util.tree_map(
+            lambda param, update: fn(param, update) if param is not None else None,
+            params,
+            updates,
+            is_leaf=lambda x:x is None
         )
-        # If grad norm > clipping * param_norm, rescale.
-        updates = jax.tree_util.tree_map(unitwise_clip, g_norm, max_norm, updates)
         return updates, state
 
     return base.GradientTransformation(init_fn, update_fn)
