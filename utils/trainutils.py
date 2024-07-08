@@ -1,9 +1,7 @@
 import jax
 import tqdm
-import einops
 from jax import random
 import jax.numpy as jnp
-from jax.tree import map as tree_map
 from dreamerv3.replay import (
     put2buffer,
     put2fragmentcache,
@@ -171,7 +169,10 @@ def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state
     key, sampling_key, report_key = random.split(key, num=3)
     bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
     idx, sampled_data = sampler(
-        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size
+        sampling_key,
+        bufferlen,
+        rb_state.buffer,
+        rb_state.batch_size
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -199,11 +200,7 @@ def train_agent_fn(
         bufferlen,
         rb_state.buffer,
         rb_state.batch_size,
-        (
-            jnp.arange(start=int(rb_state.chunk_ptr - 1), stop=int(rb_state.chunk_ptr))
-            if is_online
-            else None
-        ),
+        rb_state.chunk_ptr - 1 if is_online else None
     )
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
@@ -213,22 +210,8 @@ def train_agent_fn(
         opt_fn,
         opt_state,
     )
-    replay_outs = loss_and_info[1]  # replay_outs
-    deter = jnp.concatenate(
-        (replay_outs["deter"], replay_outs["deter"][:, :1, ...]), axis=1
-    )
-    stoch = jnp.concatenate(
-        (replay_outs["stoch"], replay_outs["stoch"][:, :1, ...]), axis=1
-    )
-    sampled_data["deter"] = deter
-    sampled_data["stoch"] = stoch
-
-    sampled_data = tree_map(
-        lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
-    )
-    rb_state.buffer = put2buffer(
-        idx, rb_state.buffer, sampled_data
-    )  # because of the shape.
+    # replay_outs = loss_and_info[1] # replay_outs
+    # rb_state.buffer = put2buffer(idx, rb_state.buffer, replay_outs) - temporal removal; investigation is required
     return (
         {
             "key": key,
