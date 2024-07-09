@@ -50,7 +50,8 @@ def main(cfg):
     key, dreamer_key = jax.random.split(key)
     dreamer, dreamer_modules, opt_fn, opt_state = make_dreamer(env, config, dreamer_key)
     # need to add optimiser state; which is from the optimiser side
-    dreamer_state = dreamer.policy_initial(dreamer_modules, config.env.num_envs)
+    policy_state = dreamer.policy_initial(dreamer_modules, config.env.num_envs)
+    train_state = dreamer.train_initial(dreamer_modules, config.common.batch_size)
 
     print("Building the agent is now done...")
     print("ReplayBuffer is generating")
@@ -83,7 +84,8 @@ def main(cfg):
         env,
         opt_fn,
         dreamer_modules,
-        dreamer_state,
+        policy_state,
+        train_state,
         env_params,
         env_state,
         opt_state,
@@ -113,7 +115,8 @@ def main(cfg):
         eval_fn=craftax_eval_fn,
         eval_env_fn=eval_env,
         agent_modules=dreamer_modules,
-        agent_state=dreamer_state,
+        policy_state=policy_state,
+        imag_state=train_state,
         env_params=env_params,
         env_state=env_state,
         opt_state=opt_state,

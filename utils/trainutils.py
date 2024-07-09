@@ -32,7 +32,8 @@ def train_and_evaluate_fn(
     eval_fn,
     eval_env_fn,
     agent_modules,
-    agent_state,
+    policy_state,
+    imag_state,
     env_params,
     env_state,
     opt_state,
@@ -42,7 +43,8 @@ def train_and_evaluate_fn(
     state = {
         "key": training_key,
         "agent_modules": agent_modules,
-        "agent_state": agent_state,
+        "policy_state": policy_state,
+        "imag_state": imag_state, 
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
@@ -108,7 +110,8 @@ def prefill_fn(
     env_fn,
     opt_fn,
     agent_modules,
-    agent_state,
+    policy_state,
+    imag_state,
     env_params,
     env_state,
     opt_state,
@@ -117,7 +120,8 @@ def prefill_fn(
     state = {
         "key": key,
         "agent_modules": agent_modules,
-        "agent_state": agent_state,
+        "policy_state": policy_state,
+        "imag_state": imag_state,
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
@@ -135,7 +139,8 @@ def interaction_fn(
     opt_fn,
     key,
     agent_modules,
-    agent_state,
+    policy_state,
+    imag_state,
     env_params,
     env_state,
     opt_state,
@@ -143,13 +148,13 @@ def interaction_fn(
 ):
     key, policy_key, env_key = random.split(key, num=3)
     env_state, timestep = env_fn.step(
-        env_key, env_state, agent_state[0][1].argmax(axis=1), env_params
+        env_key, env_state, policy_state[0][1].argmax(axis=1), env_params
     )
-    timestep["deter"] = agent_state[0][0]["deter"]
-    timestep["stoch"] = jnp.argmax(agent_state[0][0]["stoch"], -1).astype(jnp.int32)
-    timestep["action"] = agent_state[0][1]
-    agent_state, outs = agent_fn.policy(
-        agent_modules, policy_key, agent_state, timestep
+    timestep["deter"] = policy_state[0][0]["deter"]
+    timestep["stoch"] = jnp.argmax(policy_state[0][0]["stoch"], -1).astype(jnp.int32)
+    timestep["action"] = policy_state[0][1]
+    policy_state, outs = agent_fn.policy(
+        agent_modules, policy_key, policy_state, timestep
     )
     rb_state.fragment = put2fragmentcache(
         rb_state.fragment_ptr, rb_state.fragment, timestep
@@ -160,7 +165,8 @@ def interaction_fn(
     return {
         "key": key,
         "agent_modules": agent_modules,
-        "agent_state": agent_state,
+        "policy_state": policy_state,
+        "imag_state": imag_state,
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
@@ -185,7 +191,8 @@ def train_agent_fn(
     replay_ratio,
     key,
     agent_modules,
-    agent_state,
+    policy_state,
+    imag_state,
     env_params,
     env_state,
     opt_state,
@@ -208,7 +215,7 @@ def train_agent_fn(
     agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
         agent_modules,
         training_key,
-        agent_state,
+        policy_state,
         sampled_data,
         opt_fn,
         opt_state,
@@ -233,7 +240,8 @@ def train_agent_fn(
         {
             "key": key,
             "agent_modules": agent_modules,
-            "agent_state": agent_state,
+            "policy_state": policy_state,
+            "imag_state": loss_and_info[0],
             "opt_state": opt_state,
             "env_state": env_state,
             "rb_state": rb_state,
