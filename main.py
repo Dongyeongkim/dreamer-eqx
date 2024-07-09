@@ -11,6 +11,7 @@ def main(cfg):
     config = ml_collections.ConfigDict(OmegaConf.to_container(cfg, resolve=True))
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.accelerator.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    os.environ["XLA_FLAGS"]="--xla_gpu_deterministic_ops=true"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
     from utils.logger import Logger
