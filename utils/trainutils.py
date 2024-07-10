@@ -153,14 +153,15 @@ def interaction_fn(
     if timestep["is_last"][0] == True:
         policy_state = agent_fn.policy_initial(agent_modules, 1)
         timestep["deter"] = policy_state[0][0]["deter"]
-        timestep["stoch"] = jnp.argmax(policy_state[0][0]["stoch"], -1).astype(jnp.int32)
+        timestep["stoch"] = policy_state[0][0]["stoch"]
     else:
         timestep["deter"] = policy_state[0][0]["deter"]
-        timestep["stoch"] = jnp.argmax(policy_state[0][0]["stoch"], -1).astype(jnp.int32)
+        timestep["stoch"] = policy_state[0][0]["stoch"]
     timestep["action"] = policy_state[0][1]
     policy_state, outs = agent_fn.policy(
         agent_modules, policy_key, policy_state, timestep
     )
+    timestep["stoch"] = jnp.argmax(timestep["stoch"], -1).astype(jnp.int32)
     rb_state.fragment = put2fragmentcache(
         rb_state.fragment_ptr, rb_state.fragment, timestep
     )
