@@ -130,7 +130,7 @@ def prefill_fn(
     for _ in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
 
-    return state["rb_state"]
+    return state
 
 
 def interaction_fn(
