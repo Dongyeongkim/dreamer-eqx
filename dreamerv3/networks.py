@@ -675,7 +675,6 @@ class MLP(eqx.Module):
                         act=act,
                         norm=norm,
                         use_bias=use_bias,
-                        outscale=outscale,
                         winit=winit,
                         binit=binit,
                         fan=fan,
@@ -693,7 +692,6 @@ class MLP(eqx.Module):
                         act=act,
                         norm=norm,
                         use_bias=use_bias,
-                        outscale=outscale,
                         pdtype=self.pdtype,
                         cdtype=self.cdtype,
                     )
