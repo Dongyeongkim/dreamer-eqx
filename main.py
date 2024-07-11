@@ -98,14 +98,7 @@ def main(cfg):
         key=training_key,
         num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
         defrag_ratio=config.common.batch_size * config.common.batch_length,
-        replay_ratio=(
-            (
-                config.common.batch_size
-                * (config.common.batch_length - 1)
-                // config.env.replay_ratio
-            )
-            // config.env.num_envs
-        ),
+        replay_ratio=config.env.replay_ratio/(config.common.batch_size * config.common.batch_length),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,
         eval_ratio=config.report.eval_ratio,
