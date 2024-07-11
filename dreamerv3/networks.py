@@ -711,8 +711,7 @@ class MLP(eqx.Module):
                 winit="normal",
                 fan="in",
                 fanin=0,
-                pdtype=self.pdtype,
-                cdtype=self.cdtype,
+                pdtype=self.pdtype
             )
             self.out_shape = True
         else:
