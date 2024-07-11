@@ -106,6 +106,7 @@ def train_and_evaluate_fn(
 def prefill_fn(
     key,
     num_steps,
+    chunk_size,
     agent_fn,
     env_fn,
     opt_fn,
@@ -127,8 +128,18 @@ def prefill_fn(
         "rb_state": rb_state,
     }
 
-    for _ in tqdm.tqdm(range(num_steps)):
+    for i in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
+        if i % chunk_size == 0 and i != 0:
+            is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
+                state["rb_state"].chunk_ptr,
+                state["rb_state"].num_chunks,
+                state["rb_state"].num_env,
+            )
+            state["rb_state"].buffer = put2buffer(
+                idxes, state["rb_state"].buffer, state["rb_state"].fragment
+            )
+            state["rb_state"].is_full = state["rb_state"].is_full or is_full
 
     return state
 

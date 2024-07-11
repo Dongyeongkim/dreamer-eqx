@@ -79,6 +79,7 @@ def main(cfg):
     key, prefill_key = jax.random.split(key)
     state = prefill_fn(
         prefill_key,
+        16*1040,
         config.common.batch_size * config.common.batch_length,
         dreamer,
         env,
