@@ -150,13 +150,8 @@ def interaction_fn(
     env_state, timestep = env_fn.step(
         env_key, env_state, policy_state[0][1].argmax(axis=1), env_params
     )
-    if timestep["is_last"][0] == True:
-        policy_state = agent_fn.policy_initial(agent_modules, 1)
-        timestep["deter"] = policy_state[0][0]["deter"]
-        timestep["stoch"] = policy_state[0][0]["stoch"]
-    else:
-        timestep["deter"] = policy_state[0][0]["deter"]
-        timestep["stoch"] = policy_state[0][0]["stoch"]
+    timestep["deter"] = policy_state[0][0]["deter"]
+    timestep["stoch"] = policy_state[0][0]["stoch"]
     timestep["action"] = policy_state[0][1]
     policy_state, outs = agent_fn.policy(
         agent_modules, policy_key, policy_state, timestep
