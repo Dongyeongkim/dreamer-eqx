@@ -44,7 +44,7 @@ def train_and_evaluate_fn(
         "key": training_key,
         "agent_modules": agent_modules,
         "policy_state": policy_state,
-        "imag_state": imag_state, 
+        "imag_state": imag_state,
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
@@ -53,16 +53,19 @@ def train_and_evaluate_fn(
     prev = None
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
-            is_online = True
-            is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
-                state["rb_state"].chunk_ptr,
-                state["rb_state"].num_chunks,
-                state["rb_state"].num_env,
-            )
-            state["rb_state"].buffer = put2buffer(
-                idxes, state["rb_state"].buffer, state["rb_state"].fragment
-            )
-            state["rb_state"].is_full = state["rb_state"].is_full or is_full
+            if idx == 0:
+                pass
+            else:
+                is_online = True
+                is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
+                    state["rb_state"].chunk_ptr,
+                    state["rb_state"].num_chunks,
+                    state["rb_state"].num_env,
+                )
+                state["rb_state"].buffer = put2buffer(
+                    idxes, state["rb_state"].buffer, state["rb_state"].fragment
+                )
+                state["rb_state"].is_full = state["rb_state"].is_full or is_full
 
         if idx % 10 == 0:
             if idx == 0:
@@ -81,7 +84,7 @@ def train_and_evaluate_fn(
                     **state
                 )
                 is_online = False
-                    
+
             else:
                 repeats = int((idx - prev) * replay_ratio)
                 prev += repeats / replay_ratio
@@ -233,7 +236,7 @@ def train_agent_fn(
     rb_state,
     is_online,
     train_steps=1,
-    debug=True
+    debug=True,
 ):
     key, sampling_key, training_key = random.split(key, num=3)
     bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
@@ -247,11 +250,14 @@ def train_agent_fn(
             rb_state.buffer,
             rb_state.batch_size,
             (
-                jnp.arange(start=int(rb_state.chunk_ptr - i - 1), stop=int(rb_state.chunk_ptr - i))
+                jnp.arange(
+                    start=int(rb_state.chunk_ptr - i - 1),
+                    stop=int(rb_state.chunk_ptr - i),
+                )
                 if is_online
                 else None
             ),
-            )
+        )
         agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
             agent_modules,
             training_key,
@@ -259,21 +265,23 @@ def train_agent_fn(
             sampled_data,
             opt_fn,
             opt_state,
-            )
+        )
         replay_outs = loss_and_info[1]  # replay_outs
         deter = jnp.concatenate(
             (replay_outs["deter"], replay_outs["deter"][:, :1, ...]), axis=1
-            )
+        )
         stoch = jnp.concatenate(
             (replay_outs["stoch"], replay_outs["stoch"][:, :1, ...]), axis=1
-            )
+        )
         sampled_data["deter"] = deter
         sampled_data["stoch"] = stoch
-        
+
         sampled_data = tree_map(
             lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
-            )
-        rb_state.buffer = put2buffer(idx, rb_state.buffer, sampled_data)  # because of the shape.
+        )
+        rb_state.buffer = put2buffer(
+            idx, rb_state.buffer, sampled_data
+        )  # because of the shape.
         imag_state = loss_and_info[0]
         if debug:
             logger._write(loss_and_info[2], env_fn.num_envs * idx)
@@ -285,4 +293,4 @@ def train_agent_fn(
         "opt_state": opt_state,
         "env_state": env_state,
         "rb_state": rb_state,
-        }
+    }
