@@ -238,12 +238,12 @@ def train_agent_fn(
     train_steps=1,
     debug=True,
 ):
-    key, sampling_key, training_key = random.split(key, num=3)
     bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
     imag_state = None
     total_loss = None
     loss_and_info = None
     for i in reversed(range(train_steps)):
+        key, sampling_key, training_key = random.split(key, num=3)
         idx, sampled_data = sampler(
             sampling_key,
             bufferlen,
