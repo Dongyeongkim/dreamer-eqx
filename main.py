@@ -77,8 +77,9 @@ def main(cfg):
     print("Prefilling steps...")
 
     key, prefill_key = jax.random.split(key)
-    rb_state = prefill_fn(
+    state = prefill_fn(
         prefill_key,
+        16*1040,
         config.common.batch_size * config.common.batch_length,
         dreamer,
         env,
@@ -97,14 +98,7 @@ def main(cfg):
         key=training_key,
         num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
         defrag_ratio=config.common.batch_size * config.common.batch_length,
-        replay_ratio=(
-            (
-                config.common.batch_size
-                * (config.common.batch_length - 1)
-                // config.env.replay_ratio
-            )
-            // config.env.num_envs
-        ),
+        replay_ratio=config.env.replay_ratio/(config.common.batch_size * config.common.batch_length),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,
         eval_ratio=config.report.eval_ratio,
@@ -115,12 +109,12 @@ def main(cfg):
         eval_fn=craftax_eval_fn,
         eval_env_fn=eval_env,
         agent_modules=dreamer_modules,
-        policy_state=policy_state,
-        imag_state=train_state,
+        policy_state=state["policy_state"],
+        imag_state=state["imag_state"],
         env_params=env_params,
-        env_state=env_state,
+        env_state=state["env_state"],
         opt_state=opt_state,
-        rb_state=rb_state,
+        rb_state=state["rb_state"],
     )
 
 

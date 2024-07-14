@@ -127,7 +127,6 @@ class RSSM(eqx.Module):
                 winit=self.winit,
                 binit=False,
                 pdtype=self.pdtype,
-                cdtype=self.cdtype,
             ),
             "img": [
                 Linear(
@@ -156,7 +155,6 @@ class RSSM(eqx.Module):
                 winit=self.winit,
                 binit=False,
                 pdtype=self.pdtype,
-                cdtype=self.cdtype,
             ),
             "obs": [
                 Linear(
@@ -317,11 +315,10 @@ class RSSM(eqx.Module):
             post = layer(post)
         post = self.obslayers["obslogit"](post)
         postlogit = self._logit(post)
-        postlogit = cast_to_compute(postlogit, self.cdtype)
 
         deterst = cast_to_compute(deter, self.cdtype)
         stochst = cast_to_compute(
-            self._dist(postlogit).sample(seed=step_key), self.cdtype
+            self._dist(postlogit.astype("float32")).sample(seed=step_key), self.cdtype
         )
         carry = dict(
             key=key,
@@ -337,7 +334,7 @@ class RSSM(eqx.Module):
         deter, feat = self._blockgru(carry["deter"], carry["stoch"], action)
         logit = self._prior(feat)
         deter_st = cast_to_compute(deter, self.cdtype)
-        stoch_st = cast_to_compute(self._dist(logit).sample(seed=step_key), self.cdtype)
+        stoch_st = cast_to_compute(self._dist(logit.astype("float32")).sample(seed=step_key), self.cdtype)
 
         carry = dict(
             key=key,
@@ -675,7 +672,6 @@ class MLP(eqx.Module):
                         act=act,
                         norm=norm,
                         use_bias=use_bias,
-                        outscale=outscale,
                         winit=winit,
                         binit=binit,
                         fan=fan,
@@ -693,7 +689,6 @@ class MLP(eqx.Module):
                         act=act,
                         norm=norm,
                         use_bias=use_bias,
-                        outscale=outscale,
                         pdtype=self.pdtype,
                         cdtype=self.cdtype,
                     )
@@ -713,8 +708,7 @@ class MLP(eqx.Module):
                 winit="normal",
                 fan="in",
                 fanin=0,
-                pdtype=self.pdtype,
-                cdtype=self.cdtype,
+                pdtype=self.pdtype
             )
             self.out_shape = True
         else:
