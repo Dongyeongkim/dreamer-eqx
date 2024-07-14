@@ -13,6 +13,7 @@ class ReplayBuffer:
     buffer: dict
     is_full: bool
     buffer_ptr: int
+    online_ptr: int
     fragment_ptr: int
     fragment_size: int
     bufferlen_per_env: int
@@ -66,6 +67,7 @@ def generate_replaybuffer(
         buffer=buffer_initial,
         is_full=False,
         buffer_ptr=0,
+        online_ptr=0,
         fragment_ptr=0,
         fragment_size=batch_size * batch_length,
         bufferlen_per_env=blen_per_env,

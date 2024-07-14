@@ -50,7 +50,7 @@ def train_and_evaluate_fn(
         "rb_state": rb_state,
     }
     is_online = False
-    prev = None
+    prev = 0
     for idx in tqdm.tqdm(range(num_steps)):
         if idx % defrag_ratio == 0:
             if idx == 0:
@@ -69,40 +69,25 @@ def train_and_evaluate_fn(
 
         if idx % 10 == 0:
             if idx == 0:
-                prev = 0
-                state = train_agent_fn(
-                    idx,
-                    agent_fn,
-                    env_fn,
-                    opt_fn,
-                    logger,
-                    defrag_ratio,
-                    replay_ratio,
-                    env_params=env_params,
-                    is_online=is_online,
-                    train_steps=16,
-                    debug=debug_mode,
-                    **state
-                )
-                is_online = False
-
+                repeats = 1
             else:
                 repeats = int((idx - prev) * replay_ratio)
                 prev += repeats / replay_ratio
-                state = train_agent_fn(
-                    idx,
-                    agent_fn,
-                    env_fn,
-                    opt_fn,
-                    logger,
-                    defrag_ratio,
-                    replay_ratio,
-                    env_params=env_params,
-                    is_online=is_online,
-                    train_steps=repeats,
-                    debug=debug_mode,
-                    **state
-                )
+            state = train_agent_fn(
+                idx,
+                agent_fn,
+                env_fn,
+                opt_fn,
+                logger,
+                defrag_ratio,
+                replay_ratio,
+                env_params=env_params,
+                is_online=is_online,
+                train_steps=repeats,
+                debug=debug_mode,
+                **state
+            )
+            if idx > 150:
                 is_online = False
 
         if idx % report_ratio == 0:
@@ -215,7 +200,12 @@ def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state
     key, sampling_key, report_key = random.split(key, num=3)
     bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
     _, _, sampled_data = sampler(
-        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size, rb_state.fragment_size, rb_state.num_env
+        sampling_key,
+        bufferlen,
+        rb_state.buffer,
+        rb_state.batch_size,
+        rb_state.fragment_size,
+        rb_state.num_env,
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
@@ -253,9 +243,11 @@ def train_agent_fn(
             rb_state.batch_size,
             rb_state.fragment_size,
             rb_state.num_env,
-            (rb_state.buffer_ptr - rb_state.fragment_size * (i + 1)) if is_online else None,
-            None 
+            rb_state.online_ptr if is_online else None,
+            None,
         )
+        if is_online:
+            rb_state.online_ptr = rb_state.online_ptr + rb_state.fragment_size * (i + 1)
         agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
             agent_modules,
             training_key,
