@@ -57,10 +57,10 @@ def train_and_evaluate_fn(
                 pass
             else:
                 is_online = True
-                is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
-                    state["rb_state"].chunk_ptr,
-                    state["rb_state"].num_chunks,
-                    state["rb_state"].num_env,
+                is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
+                    state["rb_state"].buffer_ptr,
+                    state["rb_state"].bufferlen_per_env,
+                    state["rb_state"].fragment_size,
                 )
                 state["rb_state"].buffer = put2buffer(
                     idxes, state["rb_state"].buffer, state["rb_state"].fragment
@@ -253,14 +253,7 @@ def train_agent_fn(
             rb_state.batch_size,
             rb_state.fragment_size,
             rb_state.num_env,
-            (
-                jnp.arange(
-                    start=int(rb_state.buffer_ptr - rb_state.fragment_size * (i + 1)),
-                    stop=int(rb_state.buffer_ptr - rb_state.fragment_size * i),
-                )
-                if is_online
-                else None
-            ),
+            (rb_state.buffer_ptr - rb_state.fragment_size * (i + 1)) if is_online else None,
             None 
         )
         agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
