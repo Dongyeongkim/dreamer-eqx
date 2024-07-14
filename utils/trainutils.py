@@ -71,6 +71,7 @@ def train_and_evaluate_fn(
             if idx == 0:
                 prev = 0
                 state = train_agent_fn(
+                    idx,
                     agent_fn,
                     env_fn,
                     opt_fn,
@@ -89,6 +90,7 @@ def train_and_evaluate_fn(
                 repeats = int((idx - prev) * replay_ratio)
                 prev += repeats / replay_ratio
                 state = train_agent_fn(
+                    idx,
                     agent_fn,
                     env_fn,
                     opt_fn,
@@ -155,10 +157,10 @@ def prefill_fn(
     for i in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
         if i % chunk_size == 0 and i != 0:
-            is_full, state["rb_state"].chunk_ptr, idxes = calcbufferidxes(
-                state["rb_state"].chunk_ptr,
-                state["rb_state"].num_chunks,
-                state["rb_state"].num_env,
+            is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
+                state["rb_state"].buffer_ptr,
+                state["rb_state"].bufferlen_per_env,
+                state["rb_state"].fragment_size,
             )
             state["rb_state"].buffer = put2buffer(
                 idxes, state["rb_state"].buffer, state["rb_state"].fragment
@@ -196,7 +198,7 @@ def interaction_fn(
         rb_state.fragment_ptr, rb_state.fragment, timestep
     )
     rb_state.fragment_ptr = calcfragmentidxes(
-        rb_state.fragment_ptr, rb_state.num_fragment
+        rb_state.fragment_ptr, rb_state.fragment_size
     )
     return {
         "key": key,
@@ -211,15 +213,16 @@ def interaction_fn(
 
 def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
     key, sampling_key, report_key = random.split(key, num=3)
-    bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
-    idx, sampled_data = sampler(
-        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size
+    bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
+    _, _, sampled_data = sampler(
+        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size, rb_state.fragment_size, rb_state.num_envs
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
 
 
 def train_agent_fn(
+    idx,
     agent_fn,
     env_fn,
     opt_fn,
@@ -238,40 +241,42 @@ def train_agent_fn(
     train_steps=1,
     debug=True,
 ):
-    bufferlen = rb_state.num_chunks if rb_state.is_full else rb_state.chunk_ptr
-    imag_state = None
-    total_loss = None
+    bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
     loss_and_info = None
+    learning_state = agent_modules["wm"].initial(16)
     for i in reversed(range(train_steps)):
         key, sampling_key, training_key = random.split(key, num=3)
-        idx, sampled_data = sampler(
+        env_id, timestep_idxes, sampled_data = sampler(
             sampling_key,
             bufferlen,
             rb_state.buffer,
             rb_state.batch_size,
+            rb_state.fragment_size,
+            rb_state.num_env,
             (
                 jnp.arange(
-                    start=int(rb_state.chunk_ptr - i - 1),
-                    stop=int(rb_state.chunk_ptr - i),
+                    start=int(rb_state.buffer_ptr - rb_state.fragment_size * (i + 1)),
+                    stop=int(rb_state.buffer_ptr - rb_state.fragment_size * i),
                 )
                 if is_online
                 else None
             ),
+            None 
         )
         agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
             agent_modules,
             training_key,
-            imag_state,
+            learning_state,
             sampled_data,
             opt_fn,
             opt_state,
         )
         replay_outs = loss_and_info[1]  # replay_outs
         deter = jnp.concatenate(
-            (replay_outs["deter"], replay_outs["deter"][:, :1, ...]), axis=1
+            (sampled_data["deter"][:, :1, ...], replay_outs["deter"]), axis=1
         )
         stoch = jnp.concatenate(
-            (replay_outs["stoch"], replay_outs["stoch"][:, :1, ...]), axis=1
+            (sampled_data["stoch"][:, :1, ...], replay_outs["stoch"]), axis=1
         )
         sampled_data["deter"] = deter
         sampled_data["stoch"] = stoch
@@ -280,9 +285,9 @@ def train_agent_fn(
             lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
         )
         rb_state.buffer = put2buffer(
-            idx, rb_state.buffer, sampled_data
+            timestep_idxes, rb_state.buffer, sampled_data, env_idx=env_id
         )  # because of the shape.
-        imag_state = loss_and_info[0]
+        learning_state = loss_and_info[0]
         if debug:
             logger._write(loss_and_info[2], env_fn.num_envs * idx)
     return {
