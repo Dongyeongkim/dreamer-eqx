@@ -215,7 +215,7 @@ def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state
     key, sampling_key, report_key = random.split(key, num=3)
     bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
     _, _, sampled_data = sampler(
-        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size, rb_state.fragment_size, rb_state.num_envs
+        sampling_key, bufferlen, rb_state.buffer, rb_state.batch_size, rb_state.fragment_size, rb_state.num_env
     )
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
