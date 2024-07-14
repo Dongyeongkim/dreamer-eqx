@@ -1,4 +1,5 @@
 import collections
+from ml_collections import ConfigDict
 import re
 
 import jax
@@ -110,8 +111,15 @@ class Optimizer(eqx.Module):
                 optax.scale_by_schedule(optax.linear_schedule(0.0, 1.0, self.warmup))
             )
 
-        if isinstance(self.lr, dict):
-            chain.append(scale_by_groups({pfx: -lr for pfx, lr in self.lr.items()}))
+        if isinstance(self.lr, ConfigDict):
+            self.lr = self.lr.to_dict()
+            chain.append(
+                optax.multi_transform(
+                    {pfx: optax.scale(-lr) for pfx, lr in self.lr.items()},
+                    map_nested_fn(lambda k, _: k),
+                )
+            )
+
         else:
             chain.append(optax.scale(-self.lr))
 
@@ -337,7 +345,7 @@ def eqx_adaptive_grad_clip(clipping: float, eps: float = 1e-3):
             lambda param, update: fn(param, update) if update is not None else None,
             params,
             updates,
-            is_leaf=lambda x:x is None
+            is_leaf=lambda x: x is None,
         )
         return updates, state
 
@@ -394,51 +402,16 @@ def scale_by_momentum(beta=0.9, nesterov=False):
     return optax.GradientTransformation(init_fn, update_fn)
 
 
-# scale-by-groups
+def map_nested_fn(fn):
+    """Recursively apply `fn` to key-value pairs of a nested dict."""
 
+    def map_fn(nested_dict):
+        return {
+            k: (map_fn(v) if isinstance(v, dict) else fn(k, v))
+            for k, v in nested_dict.items()
+        }
 
-def expand_groups(groups, keys):
-    if isinstance(groups, (float, int)):
-        return {key: groups for key in keys}
-    groups = {
-        group if group.endswith("/") else f"{group}/": value
-        for group, value in groups.items()
-    }
-    assignment = {}
-    groupcount = collections.defaultdict(int)
-    for key in keys:
-        matches = [prefix for prefix in groups if key.startswith(prefix)]
-        if not matches:
-            raise ValueError(
-                f"Parameter {key} not fall into any of the groups:\n"
-                + "".join(f"- {group}\n" for group in groups.keys())
-            )
-        if len(matches) > 1:
-            raise ValueError(
-                f"Parameter {key} fall into more than one of the groups:\n"
-                + "".join(f"- {group}\n" for group in groups.keys())
-            )
-        assignment[key] = matches[0]
-        groupcount[matches[0]] += 1
-    for group in groups.keys():
-        if not groupcount[group]:
-            raise ValueError(
-                f"Group {group} did not match any of the {len(keys)} keys."
-            )
-    expanded = {key: groups[assignment[key]] for key in keys}
-    return expanded
-
-
-def scale_by_groups(groups):
-    def init_fn(params):
-        return ()
-
-    def update_fn(updates, state, params=None):
-        scales = expand_groups(groups, updates.keys())
-        updates = jax.tree_util.treemap(lambda u, s: u * s, updates, scales)
-        return updates, state
-
-    return optax.GradientTransformation(init_fn, update_fn)
+    return map_fn
 
 
 # Distributions
