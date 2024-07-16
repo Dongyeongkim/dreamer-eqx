@@ -58,10 +58,10 @@ def train_and_evaluate_fn(
                 state["rb_state"].buffer_ptr,
                 state["rb_state"].bufferlen_per_env,
                 state["rb_state"].batch_length,
-                )
+            )
             state["rb_state"].buffer = put2buffer(
                 idxes, state["rb_state"].buffer, state["rb_state"].fragment
-                )
+            )
             state["rb_state"].is_full = state["rb_state"].is_full or is_full
 
         if idx % 10 == 0:
@@ -144,7 +144,9 @@ def prefill_fn(
             )
             state["rb_state"].buffer_ptr = nextbuffer_ptr
             state["rb_state"].is_full = state["rb_state"].is_full or is_full
-            state["rb_state"].buffer = put2buffer(idxes, state["rb_state"].buffer, state["rb_state"].fragment)
+            state["rb_state"].buffer = put2buffer(
+                idxes, state["rb_state"].buffer, state["rb_state"].fragment
+            )
 
     return state
 
@@ -231,7 +233,9 @@ def train_agent_fn(
     learning_state = agent_modules["wm"].initial(16)
     for i in reversed(range(train_steps)):
         key, sampling_key, training_key = random.split(key, num=3)
-        bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
+        bufferlen = (
+            rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
+        )
         env_idxes, timestep_idxes, rb_state.online_ptr, sampled_data = sampler(
             sampling_key,
             rb_state.buffer,
@@ -262,9 +266,19 @@ def train_agent_fn(
         sampled_data["stoch"] = stoch
 
         for i in range(rb_state.batch_size):
-            sampled_data = tree_map(lambda val: einops.rearrange(val[i], "t ... -> t 1 ..."), sampled_data)
+            sampled_data = tree_map(
+                lambda val: einops.rearrange(val[i], "t ... -> t 1 ..."), sampled_data
+            )
             rb_state.buffer = put2buffer(
-                timestep_idxes[rb_state.batch_length * i:rb_state.batch_length * (i+1)], rb_state.buffer, sampled_data, env_idxes=env_idxes)  # because of the shape.
+                timestep_idxes[
+                    rb_state.batch_length * i : rb_state.batch_length * (i + 1)
+                ],
+                rb_state.buffer,
+                sampled_data,
+                env_idxes=env_idxes[
+                    rb_state.batch_length * i : rb_state.batch_length * (i + 1)
+                ],
+            )  # because of the shape.
         learning_state = loss_and_info[0]
         if debug:
             logger._write(loss_and_info[2], env_fn.num_envs * idx)
