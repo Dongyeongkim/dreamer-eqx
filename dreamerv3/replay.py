@@ -131,7 +131,7 @@ def calconlineidxes(key, buffer_ptr, online_ptr, bufferlen, batch_size, batch_le
 
 def calcfragmentidxes(fragment_id, fragment_size):
     assert fragment_id > -1, "the ptr must be in positive integer space"
-    if fragment_id == fragment_size:
+    if fragment_id == fragment_size - 1:
         return 0
     else:
         return fragment_id + 1
