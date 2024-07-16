@@ -266,7 +266,7 @@ def train_agent_fn(
         sampled_data["stoch"] = stoch
 
         for i in range(rb_state.batch_size):
-            sampled_data = tree_map(
+            partial_data = tree_map(
                 lambda val: einops.rearrange(
                     val[rb_state.batch_length * i : rb_state.batch_length * (i + 1)],
                     "t ... -> t 1 ...",
@@ -278,7 +278,7 @@ def train_agent_fn(
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
                 rb_state.buffer,
-                sampled_data,
+                partial_data,
                 env_idxes=env_idxes[
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
