@@ -271,7 +271,7 @@ def train_agent_fn(
             lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
         )
         rb_state.buffer = put2buffer(
-            timestep_idxes, rb_state.buffer, sampled_data, env_idx=env_id
+            timestep_idxes, rb_state.buffer, sampled_data, env_idxes=env_id
         )  # because of the shape.
         learning_state = loss_and_info[0]
         if debug:

@@ -141,21 +141,23 @@ def sampler(
     env_idx=None,
 ):
     env_idx_key, timestep_idx_key = jax.random.split(key, num=2)
-    env_idxes = (
+    partial_env_idxes = (
         jax.random.randint(env_idx_key, shape=(batch_size,), minval=0, maxval=num_envs)
         if env_idx is None
         else env_idx
     )  # have a defect; Not sure on multi-env setting at this point.
+    env_idxes = jnp.repeat(partial_env_idxes, repeats=batch_length)
     timestep_idxes, onlineptr = calconlineidxes(
         timestep_idx_key, bufferptr, onlineptr, bufferlen, batch_size, batch_length
     )
     idxes = (
-        jnp.linspace(timestep_idxes, timestep_idxes + batch_size - 1, batch_size)
+        jnp.linspace(timestep_idxes, timestep_idxes + batch_length - 1, batch_length)
         .astype("int32")
         .swapaxes(0, 1)
         .flatten()
     )
-    raw_sampled = tree_map(lambda val: jnp.take(val, idxes, axis=1)[env_idxes], buffer)
+    with jax.default_device(jax.devices("cpu")[0]):
+        raw_sampled = tree_map(lambda val: val[env_idxes, idxes, ...].copy(), buffer)
     sampled = tree_map(
         lambda val: einops.rearrange(val, "(b t) ... -> b t ...", b=batch_size),
         raw_sampled,
