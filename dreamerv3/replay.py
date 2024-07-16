@@ -15,10 +15,10 @@ class ReplayBuffer:
     buffer_ptr: int
     online_ptr: int
     fragment_ptr: int
-    fragment_size: int
     bufferlen_per_env: int
     num_env: int
     batch_size: int
+    batch_length: int
 
 
 def generate_replaybuffer(
@@ -33,7 +33,7 @@ def generate_replaybuffer(
     fragment_desired_key_and_dim = {
         k: (
             (
-                batch_size * batch_length,
+                batch_length,
                 num_env,
             )
             + v[1],
@@ -69,17 +69,17 @@ def generate_replaybuffer(
         buffer_ptr=0,
         online_ptr=0,
         fragment_ptr=0,
-        fragment_size=batch_size * batch_length,
         bufferlen_per_env=blen_per_env,
         num_env=num_env,
         batch_size=batch_size,
+        batch_length=batch_length,
     )
 
 
-def calcbufferidxes(buffer_ptr, buffer_size, chunk_size):
-    if buffer_ptr + chunk_size >= buffer_size:
+def calcbufferidxes(buffer_ptr, buffer_size, batch_length):
+    if buffer_ptr + batch_length >= buffer_size:
         is_full = True
-        next_buffer_ptr = buffer_ptr + chunk_size - buffer_size
+        next_buffer_ptr = buffer_ptr + batch_length - buffer_size
         idxes = jnp.concatenate(
             (
                 jnp.arange(start=buffer_ptr, stop=buffer_size),
@@ -91,10 +91,34 @@ def calcbufferidxes(buffer_ptr, buffer_size, chunk_size):
 
     else:
         is_full = False
-        next_buffer_ptr = buffer_ptr + chunk_size
-        idxes = jnp.arange(start=buffer_ptr, stop=buffer_ptr + chunk_size)
+        next_buffer_ptr = buffer_ptr + batch_length
+        idxes = jnp.arange(start=buffer_ptr, stop=buffer_ptr + batch_length)
 
         return is_full, next_buffer_ptr, idxes
+
+
+def calconlineidxes(key, buffer_ptr, online_ptr, bufferlen, batch_size, batch_length):
+    if buffer_ptr > online_ptr:
+        num_chunks = (buffer_ptr - online_ptr) // batch_length
+        if num_chunks >= batch_size:
+            idxes = jnp.arange(start=online_ptr, stop=online_ptr + batch_size)
+            online_ptr += batch_size
+        else:
+            online_idxes = jnp.arange(start=online_ptr, stop=online_ptr + num_chunks)
+            sample_idxes = jax.random.randint(
+                key,
+                shape=(batch_size - num_chunks,),
+                minval=0,
+                maxval=bufferlen - batch_length,
+            )
+            idxes = jnp.concatenate([online_idxes, sample_idxes])
+            online_ptr += num_chunks
+        return idxes, online_ptr
+    else:
+        idxes = jax.random.randint(
+            key, shape=(batch_size,), minval=0, maxval=bufferlen - batch_length
+        )
+        return idxes, online_ptr
 
 
 def calcfragmentidxes(fragment_id, fragment_size):
@@ -107,35 +131,39 @@ def calcfragmentidxes(fragment_id, fragment_size):
 
 def sampler(
     key,
-    bufferlen,
     buffer,
-    batch_size,
-    chunk_size,
     num_envs,
+    bufferptr,
+    onlineptr,
+    bufferlen,
+    batch_size,
+    batch_length,
     env_idx=None,
-    timestep_idx=None,
 ):
     env_idx_key, timestep_idx_key = jax.random.split(key, num=2)
-    env_idx = (
-        jax.random.randint(env_idx_key, shape=(), minval=0, maxval=num_envs)
+    partial_env_idxes = (
+        jax.random.randint(env_idx_key, shape=(batch_size,), minval=0, maxval=num_envs)
         if env_idx is None
         else env_idx
+    )  # have a defect; Not sure on multi-env setting at this point.
+    env_idxes = jnp.repeat(partial_env_idxes, repeats=batch_length)
+    timestep_idxes, onlineptr = calconlineidxes(
+        timestep_idx_key, bufferptr, onlineptr, bufferlen, batch_size, batch_length
     )
-    timestep_idx = (
-        jax.random.randint(
-            timestep_idx_key, shape=(), minval=0, maxval=bufferlen - chunk_size
-        )
-        if timestep_idx is None
-        else timestep_idx
+    idxes = (
+        jnp.linspace(timestep_idxes, timestep_idxes + batch_length - 1, batch_length)
+        .astype("int32")
+        .swapaxes(0, 1)
+        .flatten()
     )
-    idxes = jnp.arange(start=timestep_idx, stop=timestep_idx + chunk_size)
-    raw_sampled = tree_map(lambda val: jnp.take(val, idxes, axis=1)[env_idx], buffer)
+    with jax.default_device(jax.devices("cpu")[0]):
+        raw_sampled = tree_map(lambda val: val[env_idxes, idxes, ...].copy(), buffer)
     sampled = tree_map(
         lambda val: einops.rearrange(val, "(b t) ... -> b t ...", b=batch_size),
         raw_sampled,
     )
     sampled = jax.device_put(sampled, device=jax.devices()[0])
-    return env_idx, idxes, sampled
+    return env_idxes, idxes, onlineptr, sampled
 
 
 @partial(jax.jit, donate_argnums=1)
@@ -149,8 +177,8 @@ def put2fragmentcache(idx, fragmentcache, timestep):
 # Donating the memory is not recommended if the input shape and output shape is different, but it is necessary because of the performance issue.
 # it is allowed on CPU/GPUs(NOT on TPUs because of not-reconfigurable memory architecture; https://github.com/google/jax/issues/11036)
 @partial(jax.jit, donate_argnums=(1, 2), device=jax.devices("cpu")[0])
-def put2buffer(indices, buffer, fragmentcache, env_idx=None):
-    if env_idx is None:
+def put2buffer(indices, buffer, fragmentcache, env_idxes=None):
+    if env_idxes is None:
         buffer = tree_map(
             lambda buffer, val: buffer.at[:, indices].set(
                 einops.rearrange(val, "t b ... -> b t ...")
@@ -160,7 +188,7 @@ def put2buffer(indices, buffer, fragmentcache, env_idx=None):
         )
     else:
         buffer = tree_map(
-            lambda buffer, val: buffer.at[jnp.array([env_idx]), indices].set(
+            lambda buffer, val: buffer.at[env_idxes, indices].set(
                 einops.rearrange(val, "t b ... -> b t ...").squeeze()
             ),
             buffer,
