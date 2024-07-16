@@ -267,7 +267,11 @@ def train_agent_fn(
 
         for i in range(rb_state.batch_size):
             sampled_data = tree_map(
-                lambda val: einops.rearrange(val[i], "t ... -> t 1 ..."), sampled_data
+                lambda val: einops.rearrange(
+                    val[rb_state.batch_length * i : rb_state.batch_length * (i + 1)],
+                    "t ... -> t 1 ...",
+                ),
+                sampled_data,
             )
             rb_state.buffer = put2buffer(
                 timestep_idxes[
