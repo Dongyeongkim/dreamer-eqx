@@ -238,7 +238,7 @@ def train_agent_fn(
     learning_state = agent_modules["wm"].initial(16)
     for i in reversed(range(train_steps)):
         key, sampling_key, training_key = random.split(key, num=3)
-        env_id, timestep_idxes, rb_state.online_ptr, sampled_data = sampler(
+        env_idxes, timestep_idxes, rb_state.online_ptr, sampled_data = sampler(
             sampling_key,
             rb_state.buffer,
             rb_state.num_env,
@@ -271,7 +271,7 @@ def train_agent_fn(
             lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
         )
         rb_state.buffer = put2buffer(
-            timestep_idxes, rb_state.buffer, sampled_data, env_idxes=env_id
+            timestep_idxes, rb_state.buffer, sampled_data, env_idxes=env_idxes
         )  # because of the shape.
         learning_state = loss_and_info[0]
         if debug:
