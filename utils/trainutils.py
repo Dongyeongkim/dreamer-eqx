@@ -261,12 +261,10 @@ def train_agent_fn(
         sampled_data["deter"] = deter
         sampled_data["stoch"] = stoch
 
-        sampled_data = tree_map(
-            lambda val: einops.rearrange(val, "b t ... -> (b t) 1 ..."), sampled_data
-        )
-        rb_state.buffer = put2buffer(
-            timestep_idxes, rb_state.buffer, sampled_data, env_idxes=env_idxes
-        )  # because of the shape.
+        for i in range(rb_state.batch_size):
+            sampled_data = tree_map(lambda val: einops.rearrange(val[i], "t ... -> t 1 ..."), sampled_data)
+            rb_state.buffer = put2buffer(
+                timestep_idxes[rb_state.batch_length * i:rb_state.batch_length * (i+1)], rb_state.buffer, sampled_data, env_idxes=env_idxes)  # because of the shape.
         learning_state = loss_and_info[0]
         if debug:
             logger._write(loss_and_info[2], env_fn.num_envs * idx)
