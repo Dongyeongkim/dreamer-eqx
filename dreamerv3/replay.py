@@ -106,7 +106,7 @@ def calconlineidxes(key, buffer_ptr, online_ptr, bufferlen, batch_size, batch_le
                 stop=online_ptr + batch_size * batch_length,
                 step=batch_length,
             )
-            online_ptr += batch_size
+            online_ptr += batch_size * batch_length
         else:
             online_idxes = jnp.arange(
                 start=online_ptr,
@@ -120,7 +120,7 @@ def calconlineidxes(key, buffer_ptr, online_ptr, bufferlen, batch_size, batch_le
                 maxval=bufferlen - batch_length,
             )
             idxes = jnp.concatenate([online_idxes, sample_idxes])
-            online_ptr += num_chunks
+            online_ptr += num_chunks * batch_length
         return idxes, online_ptr
     else:
         idxes = jax.random.randint(
