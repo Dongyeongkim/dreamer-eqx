@@ -52,20 +52,17 @@ def train_and_evaluate_fn(
     is_online = False
     prev = 0
     for idx in tqdm.tqdm(range(num_steps)):
-        if idx % defrag_ratio == 0:
-            if idx == 0:
-                pass
-            else:
-                is_online = True
-                is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
-                    state["rb_state"].buffer_ptr,
-                    state["rb_state"].bufferlen_per_env,
-                    state["rb_state"].batch_length,
+        if (idx + 1) % defrag_ratio == 0:
+            is_online = True
+            is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
+                state["rb_state"].buffer_ptr,
+                state["rb_state"].bufferlen_per_env,
+                state["rb_state"].batch_length,
                 )
-                state["rb_state"].buffer = put2buffer(
-                    idxes, state["rb_state"].buffer, state["rb_state"].fragment
+            state["rb_state"].buffer = put2buffer(
+                idxes, state["rb_state"].buffer, state["rb_state"].fragment
                 )
-                state["rb_state"].is_full = state["rb_state"].is_full or is_full
+            state["rb_state"].is_full = state["rb_state"].is_full or is_full
 
         if idx % 10 == 0:
             if idx == 0:
@@ -87,8 +84,7 @@ def train_and_evaluate_fn(
                 debug=debug_mode,
                 **state
             )
-            if idx > 150:
-                is_online = False
+            is_online = False
 
         if idx % report_ratio == 0:
             report_key, report = report_fn(
@@ -117,7 +113,6 @@ def train_and_evaluate_fn(
 def prefill_fn(
     key,
     num_steps,
-    batch_length,
     agent_fn,
     env_fn,
     opt_fn,
@@ -141,16 +136,15 @@ def prefill_fn(
 
     for i in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-        if i % batch_length == 0 and i != 0:
-            is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
+        if (i + 1) % state["rb_state"].batch_length == 0:
+            is_full, nextbuffer_ptr, idxes = calcbufferidxes(
                 state["rb_state"].buffer_ptr,
                 state["rb_state"].bufferlen_per_env,
                 state["rb_state"].batch_length,
             )
-            state["rb_state"].buffer = put2buffer(
-                idxes, state["rb_state"].buffer, state["rb_state"].fragment
-            )
+            state["rb_state"].buffer_ptr = nextbuffer_ptr
             state["rb_state"].is_full = state["rb_state"].is_full or is_full
+            state["rb_state"].buffer = put2buffer(idxes, state["rb_state"].buffer, state["rb_state"].fragment)
 
     return state
 
@@ -233,11 +227,11 @@ def train_agent_fn(
     train_steps=1,
     debug=True,
 ):
-    bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
     loss_and_info = None
     learning_state = agent_modules["wm"].initial(16)
     for i in reversed(range(train_steps)):
         key, sampling_key, training_key = random.split(key, num=3)
+        bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
         env_idxes, timestep_idxes, rb_state.online_ptr, sampled_data = sampler(
             sampling_key,
             rb_state.buffer,

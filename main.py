@@ -80,7 +80,6 @@ def main(cfg):
     state = prefill_fn(
         prefill_key,
         config.common.batch_size * config.common.batch_length,
-        config.common.batch_size * config.common.batch_length,
         dreamer,
         env,
         opt_fn,
@@ -97,7 +96,7 @@ def main(cfg):
     state = train_and_evaluate_fn(
         key=training_key,
         num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
-        defrag_ratio=config.common.batch_size * config.common.batch_length,
+        defrag_ratio=config.common.batch_length,
         replay_ratio=config.env.replay_ratio/(config.common.batch_size * config.common.batch_length),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,

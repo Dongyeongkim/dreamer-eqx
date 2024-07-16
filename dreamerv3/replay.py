@@ -33,7 +33,7 @@ def generate_replaybuffer(
     fragment_desired_key_and_dim = {
         k: (
             (
-                batch_size * batch_length,
+                batch_length,
                 num_env,
             )
             + v[1],
