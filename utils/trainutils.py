@@ -268,7 +268,7 @@ def train_agent_fn(
         for i in range(rb_state.batch_size):
             partial_data = tree_map(
                 lambda val: einops.rearrange(
-                    val[rb_state.batch_length * i : rb_state.batch_length * (i + 1)],
+                    val[i],
                     "t ... -> t 1 ...",
                 ),
                 sampled_data,
