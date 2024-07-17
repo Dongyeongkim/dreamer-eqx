@@ -11,7 +11,7 @@ def main(cfg):
     config = ml_collections.ConfigDict(OmegaConf.to_container(cfg, resolve=True))
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.accelerator.gpu_id)
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-    os.environ["XLA_FLAGS"]="--xla_gpu_deterministic_ops=true"
+    os.environ["XLA_FLAGS"] = "--xla_gpu_deterministic_ops=true"
     path = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
 
     from utils.logger import Logger
@@ -19,7 +19,7 @@ def main(cfg):
     from utils.agentutils import make_dreamer
     from utils.trainutils import prefill_fn, train_and_evaluate_fn
     from utils.evalutils import craftax_eval_fn
-    from dreamerv3.replay import generate_replaybuffer
+    from embodied.replay import Replay
 
     logger = Logger(path)
 
@@ -56,21 +56,11 @@ def main(cfg):
     print("Building the agent is now done...")
     print("ReplayBuffer is generating")
 
-    rb_state = generate_replaybuffer(
-        buffer_size=config.common.rb_size,
-        desired_key_dtype_dim={
-            "deter": ("bfloat16", (config.wm.deter,)),
-            "stoch": ("int32", (config.wm.latent_dim,)),
-            "observation": ("float32", (64, 64, 3)),
-            "reward": ("float32", ()),
-            "is_first": ("bool", ()),
-            "is_last": ("bool", ()),
-            "is_terminal": ("bool", ()),
-            "action": ("float32", (env.action_space(env_params).n,)),
-        },
-        batch_size=config.common.batch_size,
-        batch_length=config.common.batch_length,
-        num_env=config.env.num_envs,
+    rb_state = Replay(
+        length=config.common.batch_length,
+        capacity=config.common.rb_size,
+        directory=f"{path}/replay",
+        online=config.common.online_buffer,
     )
     print("ReplayBuffer has set up")
 
@@ -97,7 +87,8 @@ def main(cfg):
         key=training_key,
         num_steps=int(config.env.num_interaction_steps // config.env.num_envs),
         defrag_ratio=config.common.batch_length,
-        replay_ratio=config.env.replay_ratio/(config.common.batch_size * config.common.batch_length),
+        replay_ratio=config.env.replay_ratio
+        / (config.common.batch_size * config.common.batch_length),
         debug_mode=config.report.debug_mode,
         report_ratio=config.report.report_ratio,
         eval_ratio=config.report.eval_ratio,
@@ -119,6 +110,7 @@ def main(cfg):
 
 if __name__ == "__main__":
     import wandb
+
     wandb.init(project="dreamer-eqx", sync_tensorboard=True)
     main()
     wandb.finish()

@@ -59,7 +59,6 @@ class Chunk:
         assert 0 <= index and index + length <= self.length
         return {k: v[index: index + length] for k, v in self.data.items()}
 
-    @embodied.timer.section('chunk_save')
     def save(self, directory, log=False):
         assert not self.saved
         self.saved = True

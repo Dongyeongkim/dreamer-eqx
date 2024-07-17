@@ -94,7 +94,6 @@ class Replay:
             self.metrics[key] = 0
         return stats
 
-    @embodied.timer.section('replay_add')
     def add(self, step, worker=0):
         with self.rwlock.reading:
 
@@ -143,7 +142,6 @@ class Replay:
             if self.online:
                 self.lengths[worker] += 1
 
-    @embodied.timer.section('replay_update')
     def update(self, data):
         data = data.copy()
         stepid = data.pop('stepid')
@@ -166,7 +164,6 @@ class Replay:
                 except KeyError:
                     pass
 
-    @embodied.timer.section('replay_sample')
     def _sample(self):
         dur = self._wait(self.limiter.want_sample, 'Replay sample is waiting')
         self.limiter.sample()
@@ -276,8 +273,13 @@ class Replay:
                     data = self._assemble_batch(seqs, t, t + length)
                     data = self._annotate_batch(data, is_online, is_first=(t == 0))
                     yield data
+    
+    def sample(self, batch):
+        seqs, is_online = zip(*[self._sample() for _ in range(batch)])
+        data = self._assemble_batch(seqs, 0, self.length)
+        data = self._annotate_batch(data, is_online, is_first=True)
+        return data
 
-    @embodied.timer.section('assemble_batch')
     def _assemble_batch(self, seqs, start, stop):
         shape = (len(seqs), stop - start)
         data = {
@@ -299,7 +301,6 @@ class Replay:
                     break
         return data
 
-    @embodied.timer.section('annotate_batch')
     def _annotate_batch(self, data, is_online, is_first):
         data = data.copy()
         if self.online:
@@ -316,7 +317,6 @@ class Replay:
                 data['is_last'] = data['is_last'] | next_is_first
         return data
 
-    @embodied.timer.section('replay_save')
     def save(self):
         if self.directory:
             with self.rwlock.writing:
@@ -333,7 +333,6 @@ class Replay:
                     [promise.result() for promise in promises]
         return {'limiter': self.limiter.save()}
 
-    @embodied.timer.section('replay_load')
     def load(self, data=None, directory=None, amount=None):
 
         directory = directory or self.directory
@@ -386,7 +385,6 @@ class Replay:
         if data and 'limiter' in data:
             self.limiter.load(data.pop('limiter'))
 
-    @embodied.timer.section('complete_chunk')
     def _complete(self, chunk, worker):
         succ = chunklib.Chunk(self.chunksize)
         with self.refs_lock:

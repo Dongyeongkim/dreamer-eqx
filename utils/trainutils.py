@@ -4,14 +4,6 @@ import einops
 from jax import random
 import jax.numpy as jnp
 from jax.tree import map as tree_map
-from dreamerv3.replay import (
-    put2buffer,
-    update2buffer,
-    put2fragmentcache,
-    sampler,
-    calcbufferidxes,
-    calcfragmentidxes,
-)
 
 # rollout_fn
 #   - interaction_fn: interacting with jax environment
@@ -53,18 +45,6 @@ def train_and_evaluate_fn(
     is_online = False
     prev = 0
     for idx in tqdm.tqdm(range(num_steps)):
-        if (idx + 1) % defrag_ratio == 0:
-            is_online = True
-            is_full, state["rb_state"].buffer_ptr, idxes = calcbufferidxes(
-                state["rb_state"].buffer_ptr,
-                state["rb_state"].bufferlen_per_env,
-                state["rb_state"].batch_length,
-            )
-            state["rb_state"].buffer = put2buffer(
-                idxes, state["rb_state"].buffer, state["rb_state"].fragment
-            )
-            state["rb_state"].is_full = state["rb_state"].is_full or is_full
-
         if idx % 10 == 0:
             if idx == 0:
                 repeats = 1
@@ -135,19 +115,8 @@ def prefill_fn(
         "rb_state": rb_state,
     }
 
-    for i in tqdm.tqdm(range(num_steps)):
+    for _ in tqdm.tqdm(range(num_steps)):
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
-        if (i + 1) % state["rb_state"].batch_length == 0:
-            is_full, nextbuffer_ptr, idxes = calcbufferidxes(
-                state["rb_state"].buffer_ptr,
-                state["rb_state"].bufferlen_per_env,
-                state["rb_state"].batch_length,
-            )
-            state["rb_state"].buffer_ptr = nextbuffer_ptr
-            state["rb_state"].is_full = state["rb_state"].is_full or is_full
-            state["rb_state"].buffer = put2buffer(
-                idxes, state["rb_state"].buffer, state["rb_state"].fragment
-            )
 
     return state
 
@@ -176,12 +145,7 @@ def interaction_fn(
         agent_modules, policy_key, policy_state, timestep
     )
     timestep["stoch"] = jnp.argmax(timestep["stoch"], -1).astype(jnp.int32)
-    rb_state.fragment = put2fragmentcache(
-        rb_state.fragment_ptr, rb_state.fragment, timestep
-    )
-    rb_state.fragment_ptr = calcfragmentidxes(
-        rb_state.fragment_ptr, rb_state.batch_length
-    )
+    rb_state.add(timestep)
     return {
         "key": key,
         "agent_modules": agent_modules,
@@ -194,18 +158,8 @@ def interaction_fn(
 
 
 def report_fn(agent_fn, defrag_ratio, replay_ratio, key, agent_modules, rb_state, idx):
-    key, sampling_key, report_key = random.split(key, num=3)
-    bufferlen = rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
-    _, _, _, sampled_data = sampler(
-        sampling_key,
-        rb_state.buffer,
-        rb_state.num_env,
-        rb_state.buffer_ptr,
-        rb_state.online_ptr,
-        bufferlen,
-        rb_state.batch_size,
-        rb_state.batch_length,
-    )
+    key, report_key = random.split(key, num=2)
+    sampled_data = rb_state.sample(16)
     report = agent_fn.report(agent_modules, report_key, sampled_data)
     return key, report
 
@@ -233,21 +187,9 @@ def train_agent_fn(
     loss_and_info = None
     learning_state = agent_modules["wm"].initial(16)
     for i in reversed(range(train_steps)):
-        key, sampling_key, training_key = random.split(key, num=3)
-        bufferlen = (
-            rb_state.bufferlen_per_env if rb_state.is_full else rb_state.buffer_ptr
-        )
-        env_idxes, timestep_idxes, rb_state.online_ptr, sampled_data = sampler(
-            sampling_key,
-            rb_state.buffer,
-            rb_state.num_env,
-            rb_state.buffer_ptr,
-            rb_state.online_ptr,
-            bufferlen,
-            rb_state.batch_size,
-            rb_state.batch_length,
-        )
-
+        key, training_key = random.split(key, num=2)
+        # sampler part
+        sampled_data = rb_state.sample(16)
         agent_modules, opt_state, total_loss, loss_and_info = agent_fn.train(
             agent_modules,
             training_key,
@@ -257,26 +199,8 @@ def train_agent_fn(
             opt_state,
         )
         replay_outs = loss_and_info[1]  # replay_outs
-        deter = jnp.concatenate(
-            (sampled_data["deter"][:, :1, ...], replay_outs["deter"]), axis=1
-        )
-        stoch = jnp.concatenate(
-            (sampled_data["stoch"][:, :1, ...], replay_outs["stoch"]), axis=1
-        )
-        
-
-        for i in range(rb_state.batch_size):
-            rb_state.buffer = update2buffer(
-                timestep_idxes[
-                    rb_state.batch_length * i : rb_state.batch_length * (i + 1)
-                ],
-                rb_state.buffer,
-                deter[i],
-                stoch[i],
-                env_idxes=env_idxes[
-                    rb_state.batch_length * i : rb_state.batch_length * (i + 1)
-                ],
-            )  # because of the shape.
+        replay_outs.updat({"stepid": sampled_data["stepid"]})
+        rb_state.update(replay_outs)
         learning_state = loss_and_info[0]
         if debug:
             logger._write(loss_and_info[2], env_fn.num_envs * idx)
