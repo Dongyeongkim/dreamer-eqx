@@ -204,13 +204,8 @@ def put2buffer(indices, buffer, fragmentcache, env_idxes=None):
         )
     return buffer
 
-@partial(jax.jit, donate_argnums=(1, 2), device=jax.devices("cpu")[0])
-def update2buffer(indices, buffer, latent_states, env_idxes=None):
-    if env_idxes is None:
-        buffer["deter"] = buffer["deter"].at[:, indices].set(latent_states["deter"])
-        buffer["stoch"] = buffer["stoch"].at[:, indices].set(latent_states["stoch"])
-        return buffer
-    else:
-        buffer["deter"] = buffer["deter"].at[env_idxes, indices].set(latent_states["deter"])
-        buffer["stoch"] = buffer["stoch"].at[env_idxes, indices].set(latent_states["stoch"])
-        return buffer
+@partial(jax.jit, donate_argnums=(1, 2, 3), device=jax.devices("cpu")[0])
+def update2buffer(indices, buffer, deter, stoch, env_idxes):
+    buffer["deter"] = buffer["deter"].at[env_idxes, indices].set(deter)
+    buffer["stoch"] = buffer["stoch"].at[env_idxes, indices].set(stoch)
+    return buffer

@@ -263,23 +263,16 @@ def train_agent_fn(
         stoch = jnp.concatenate(
             (sampled_data["stoch"][:, :1, ...], replay_outs["stoch"]), axis=1
         )
-        sampled_data["deter"] = deter
-        sampled_data["stoch"] = stoch
+        
 
         for i in range(rb_state.batch_size):
-            partial_data = tree_map(
-                lambda val: einops.rearrange(
-                    val[i],
-                    "t ... -> t 1 ...",
-                ),
-                sampled_data,
-            )
             rb_state.buffer = update2buffer(
                 timestep_idxes[
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
                 rb_state.buffer,
-                partial_data,
+                deter,
+                stoch,
                 env_idxes=env_idxes[
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
