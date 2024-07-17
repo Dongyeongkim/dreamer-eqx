@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.tree import map as tree_map
 from dreamerv3.replay import (
     put2buffer,
+    update2buffer,
     put2fragmentcache,
     sampler,
     calcbufferidxes,
@@ -273,7 +274,7 @@ def train_agent_fn(
                 ),
                 sampled_data,
             )
-            rb_state.buffer = put2buffer(
+            rb_state.buffer = update2buffer(
                 timestep_idxes[
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
