@@ -81,7 +81,7 @@ def train_and_evaluate_fn(
 
         if idx % eval_ratio == 0:
             report = eval_fn(agent_fn, env_fn, key, agent_modules, env_params)
-            logger._write(report, env_fn.num_envs * idx)
+            logger._write(report, 1 * idx)
 
         state = interaction_fn(agent_fn, env_fn, opt_fn, env_params=env_params, **state)
     return state
@@ -204,7 +204,7 @@ def train_agent_fn(
         rb_state.update(replay_outs)
         learning_state = loss_and_info[0]
         if debug:
-            logger._write(loss_and_info[2], env_fn.num_envs * idx)
+            logger._write(loss_and_info[2], 1 * idx)
     return {
         "key": key,
         "agent_modules": agent_modules,
