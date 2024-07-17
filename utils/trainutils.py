@@ -136,15 +136,16 @@ def interaction_fn(
 ):
     key, policy_key, env_key = random.split(key, num=3)
     env_state, timestep = env_fn.step(
-        env_key, env_state, policy_state[0][1].argmax(axis=1), env_params
+        env_key, env_state, policy_state[0][1].argmax(), env_params
     )
-    timestep["deter"] = policy_state[0][0]["deter"]
-    timestep["stoch"] = policy_state[0][0]["stoch"]
-    timestep["action"] = policy_state[0][1]
+    timestep["deter"] = policy_state[0][0]["deter"].squeeze()
+    timestep["stoch"] = policy_state[0][0]["stoch"].squeeze()
+    timestep["action"] = policy_state[0][1].squeeze()
     policy_state, outs = agent_fn.policy(
         agent_modules, policy_key, policy_state, timestep
     )
     timestep["stoch"] = jnp.argmax(timestep["stoch"], -1).astype(jnp.int32)
+    timestep["observation"] = timestep["observation"].squeeze()
     rb_state.add(timestep)
     return {
         "key": key,
@@ -199,7 +200,7 @@ def train_agent_fn(
             opt_state,
         )
         replay_outs = loss_and_info[1]  # replay_outs
-        replay_outs.updat({"stepid": sampled_data["stepid"]})
+        replay_outs.update({"stepid": sampled_data["stepid"]})
         rb_state.update(replay_outs)
         learning_state = loss_and_info[0]
         if debug:
