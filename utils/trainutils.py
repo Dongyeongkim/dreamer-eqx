@@ -77,7 +77,7 @@ def train_and_evaluate_fn(
                 state["rb_state"],
                 idx,
             )
-            logger._write(report, env_fn.num_envs * idx)
+            logger._write(report, 1 * idx)
 
         if idx % eval_ratio == 0:
             report = eval_fn(agent_fn, env_fn, key, agent_modules, env_params)
