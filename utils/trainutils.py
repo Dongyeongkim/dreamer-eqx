@@ -271,8 +271,8 @@ def train_agent_fn(
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
                 rb_state.buffer,
-                deter,
-                stoch,
+                deter[i],
+                stoch[i],
                 env_idxes=env_idxes[
                     rb_state.batch_length * i : rb_state.batch_length * (i + 1)
                 ],
