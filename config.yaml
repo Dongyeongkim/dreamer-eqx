@@ -121,6 +121,7 @@ common:
   rb_size: 3e6
   batch_size: 16
   batch_length: 65
+  online_buffer: True
   loss_scales: 
     recon: 1.0
     reward: 1.0

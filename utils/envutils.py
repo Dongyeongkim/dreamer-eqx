@@ -3,6 +3,7 @@ import numpy as np
 from craftax.craftax_env import make_craftax_env_from_name
 from envs.wrappers.craftax_wrapper import (
     BatchEnvWrapper,
+    AutoResetEnvWrapper,
     OptimisticResetVecEnvWrapper,
     CraftaxWrapper,
     CraftaxEvalWrapper,
@@ -29,12 +30,17 @@ def make_craftax_env(
     assert num_envs > 0, "number of the environments must be greater or equal than 1"
 
     env = make_craftax_env_from_name(env_name, not autoreset)
-    if autoreset:
-        env = OptimisticResetVecEnvWrapper(
-            env, num_envs=num_envs, reset_ratio=np.minimum(num_envs, 16)
-        )
+    if num_envs == 1:
+        if autoreset:
+            env = AutoResetEnvWrapper(env)
     else:
-        env = BatchEnvWrapper(env)
+        if autoreset:
+            env = OptimisticResetVecEnvWrapper(
+                env, num_envs=num_envs, reset_ratio=np.minimum(num_envs, 16)
+                )
+        else:
+            env = BatchEnvWrapper(env)
+    
     if eval_mode:
         env = CraftaxEvalWrapper(env)
     else:
