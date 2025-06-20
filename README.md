@@ -11,6 +11,8 @@ The goal of this reimplementation is ...
 
 Thanks to flexible JAX based neural networks library [Equinox](https://docs.kidger.site/equinox/), It was possible to rewrite the Ninjax code into more readable & sustainable code format.  
 
+This code utilises the Hafner's [embodied](https://github.com/danijar/embodied) for replay buffer and state tracking.
+
 
 **Warning: Reproducing has not been done yet**
 
